@@ -1,18 +1,20 @@
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
-
+const dotenv = require('dotenv');
 const app = express();
 app.use(express.json());
 app.use(cors());
 
+dotenv.config();
+
 // 🔹 Connect to PostgreSQL
 const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "crmbs_v2.0",
-  password: "1017",
-  port: 5432,
+  user: process.env.USER,
+  host: process.env.HOST,
+  database: process.env.DATABASE,
+  password: process.env.PASSWORD,
+  port: process.env.PORT,
 });
 
 
