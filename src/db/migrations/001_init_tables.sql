@@ -1,0 +1,1 @@
+-- Placeholder migration: create base CRMBS tables.

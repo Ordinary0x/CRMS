@@ -1,0 +1,1 @@
+-- Placeholder migration: create_booking() stored procedure.
