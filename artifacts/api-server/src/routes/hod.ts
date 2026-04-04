@@ -233,4 +233,55 @@ router.get("/hod/analytics", ...hodAuth, async (req, res): Promise<void> => {
   }
 });
 
+// GET /hod/dashboard
+router.get("/hod/dashboard", ...hodAuth, async (req, res): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    const [users, pendingApprovals, bookingsToday, recentApprovals] = await Promise.all([
+      client.query(
+        "SELECT COUNT(*)::INT as count FROM users WHERE department_id = $1 AND is_active = true",
+        [req.user!.department_id]
+      ),
+      client.query(
+        `SELECT COUNT(*)::INT as count FROM approval a
+         JOIN booking b ON b.booking_id = a.booking_id
+         JOIN booking_status bs ON bs.status_id = b.status_id AND bs.status_name = 'Pending'
+         JOIN resource r ON r.resource_id = b.resource_id
+         JOIN users u ON u.user_id = b.user_id
+         WHERE a.step_number = 2 AND a.decision IS NULL
+           AND (r.department_id = $1 OR u.department_id = $1)`,
+        [req.user!.department_id]
+      ),
+      client.query(
+        `SELECT COUNT(*)::INT as count FROM booking b
+         JOIN users u ON u.user_id = b.user_id
+         WHERE b.date = CURRENT_DATE AND u.department_id = $1`,
+        [req.user!.department_id]
+      ),
+      client.query(
+        `SELECT a.approval_id, b.booking_id, b.date, b.start_time, b.end_time, b.purpose,
+         r.resource_name, CONCAT(u.first_name, ' ', u.last_name) as requester_name
+         FROM approval a
+         JOIN booking b ON b.booking_id = a.booking_id
+         JOIN booking_status bs ON bs.status_id = b.status_id AND bs.status_name = 'Pending'
+         JOIN resource r ON r.resource_id = b.resource_id
+         JOIN users u ON u.user_id = b.user_id
+         WHERE a.step_number = 2 AND a.decision IS NULL
+           AND (r.department_id = $1 OR u.department_id = $1)
+         ORDER BY b.created_at ASC LIMIT 5`,
+        [req.user!.department_id]
+      ),
+    ]);
+
+    res.json({
+      dept_users: users.rows[0].count,
+      pending_approvals: pendingApprovals.rows[0].count,
+      bookings_today: bookingsToday.rows[0].count,
+      recent_pending: recentApprovals.rows,
+    });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

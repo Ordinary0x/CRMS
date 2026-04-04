@@ -1,11 +1,13 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+// Firebase replaced with custom JWT auth.
+// This file is kept as a compatibility stub.
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+export const auth = {
+  currentUser: null as { getIdToken: () => Promise<string> } | null,
+  signOut: async () => {
+    localStorage.removeItem("crmbs_token");
+    localStorage.removeItem("crmbs_user");
+    window.location.href = "/login";
+  },
 };
 
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const app = null;

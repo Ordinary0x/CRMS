@@ -1,62 +1,80 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
-import { setAuthTokenGetter } from '@workspace/api-client-react';
-import { getMe, UserProfile } from '@workspace/api-client-react';
+import { setAuthTokenGetter, getMe, UserProfile } from '@workspace/api-client-react';
+
+const TOKEN_KEY = "crmbs_token";
 
 interface AuthContextType {
-  firebaseUser: FirebaseUser | null;
   dbUser: UserProfile | null;
   role: string | null;
   loading: boolean;
-  logout: () => Promise<void>;
+  token: string | null;
+  setToken: (token: string | null) => void;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [dbUser, setDbUser] = useState<UserProfile | null>(null);
+  const [token, setTokenState] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
+  const setToken = (newToken: string | null) => {
+    setTokenState(newToken);
+    if (newToken) {
+      localStorage.setItem(TOKEN_KEY, newToken);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  };
+
+  const fetchUser = async (currentToken: string) => {
+    try {
+      const profile = await getMe();
+      setDbUser(profile);
+    } catch {
+      setDbUser(null);
+      setToken(null);
+    }
+  };
+
+  const refreshUser = async () => {
+    const currentToken = localStorage.getItem(TOKEN_KEY);
+    if (currentToken) {
+      await fetchUser(currentToken);
+    }
+  };
+
   useEffect(() => {
-    // Configure the custom fetch token getter
-    setAuthTokenGetter(async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return null;
-      return await currentUser.getIdToken();
+    setAuthTokenGetter(() => {
+      return localStorage.getItem(TOKEN_KEY);
     });
-
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (user) {
-        try {
-          const profile = await getMe();
-          setDbUser(profile);
-        } catch (error) {
-          console.error("Failed to fetch user profile:", error);
-          setDbUser(null);
-        }
-      } else {
-        setDbUser(null);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
   }, []);
 
-  const logout = async () => {
-    await auth.signOut();
+  useEffect(() => {
+    const currentToken = localStorage.getItem(TOKEN_KEY);
+    if (currentToken) {
+      fetchUser(currentToken).finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  const logout = () => {
+    setToken(null);
+    setDbUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      firebaseUser, 
-      dbUser, 
-      role: dbUser?.role || null, 
+    <AuthContext.Provider value={{
+      dbUser,
+      role: dbUser?.role || null,
       loading,
-      logout
+      token,
+      setToken,
+      logout,
+      refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

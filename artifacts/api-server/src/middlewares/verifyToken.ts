@@ -1,31 +1,15 @@
 import type { Request, Response, NextFunction } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
+import jwt from "jsonwebtoken";
 
-interface FirebaseTokenPayload {
+const JWT_SECRET = process.env.JWT_SECRET || "crmbs-dev-secret-change-in-production";
+
+interface TokenPayload {
   uid: string;
   email?: string;
   iat?: number;
   exp?: number;
-}
-
-async function verifyFirebaseToken(token: string): Promise<FirebaseTokenPayload | null> {
-  // Decode the JWT without verification for development
-  // In production, use Firebase Admin SDK
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
-    if (!payload.user_id && !payload.sub) return null;
-    return {
-      uid: payload.user_id || payload.sub,
-      email: payload.email,
-      iat: payload.iat,
-      exp: payload.exp,
-    };
-  } catch (e) {
-    return null;
-  }
 }
 
 declare global {
@@ -48,6 +32,8 @@ declare global {
   }
 }
 
+export { JWT_SECRET };
+
 export async function verifyToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
@@ -58,20 +44,26 @@ export async function verifyToken(req: Request, res: Response, next: NextFunctio
   const token = header.split(" ")[1];
 
   try {
-    const decoded = await verifyFirebaseToken(token);
-    if (!decoded) {
+    let uid: string;
+    let email: string | undefined;
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+      uid = decoded.uid;
+      email = decoded.email;
+    } catch {
       res.status(401).json({ error: "Invalid token" });
       return;
     }
 
-    req.firebaseUid = decoded.uid;
-    req.firebaseEmail = decoded.email;
+    req.firebaseUid = uid;
+    req.firebaseEmail = email;
 
     const client = await pool.connect();
     try {
       const result = await client.query(
         "SELECT * FROM users WHERE firebase_uid = $1",
-        [decoded.uid]
+        [uid]
       );
 
       if (!result.rows[0]) {
@@ -104,7 +96,7 @@ export async function optionalVerifyToken(req: Request, res: Response, next: Nex
 
   const token = header.split(" ")[1];
   try {
-    const decoded = await verifyFirebaseToken(token);
+    const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
     if (decoded) {
       req.firebaseUid = decoded.uid;
       const client = await pool.connect();

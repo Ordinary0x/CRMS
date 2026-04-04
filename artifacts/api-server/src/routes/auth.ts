@@ -1,28 +1,99 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
-import { verifyToken } from "../middlewares/verifyToken";
+import { verifyToken, JWT_SECRET } from "../middlewares/verifyToken";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
 
-// POST /auth/register — create user row if not exists
-router.post("/auth/register", async (req, res): Promise<void> => {
-  const { first_name, last_name, email, firebase_uid } = req.body;
+// POST /auth/login — authenticate with email + password, return JWT
+router.post("/auth/login", async (req, res): Promise<void> => {
+  const { email, password } = req.body;
 
-  if (!firebase_uid || !email || !first_name || !last_name) {
-    res.status(400).json({ error: "Missing required fields" });
+  if (!email || !password) {
+    res.status(400).json({ error: "Email and password are required" });
     return;
   }
 
   const client = await pool.connect();
   try {
-    // Check if user already exists
+    const result = await client.query(
+      "SELECT * FROM users WHERE email = $1",
+      [email]
+    );
+
+    const user = result.rows[0];
+    if (!user) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    if (!user.password_hash) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    if (!passwordMatch) {
+      res.status(401).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const token = jwt.sign(
+      { uid: user.firebase_uid, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      token,
+      user: {
+        user_id: user.user_id,
+        role: user.role,
+        is_active: user.is_active,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+      }
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /auth/register — create user row, return JWT
+router.post("/auth/register", async (req, res): Promise<void> => {
+  const { first_name, last_name, email, password, firebase_uid } = req.body;
+
+  if (!email || !first_name || !last_name) {
+    res.status(400).json({ error: "Missing required fields" });
+    return;
+  }
+
+  if (!password && !firebase_uid) {
+    res.status(400).json({ error: "Password is required" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    const uid = firebase_uid || randomUUID();
+
+    // Check if user already exists by email
     const existing = await client.query(
-      "SELECT user_id, role, is_active FROM users WHERE firebase_uid = $1",
-      [firebase_uid]
+      "SELECT user_id, role, is_active FROM users WHERE email = $1",
+      [email]
     );
 
     if (existing.rows[0]) {
+      const token = jwt.sign(
+        { uid, email },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
       res.json({
+        token,
         user_id: existing.rows[0].user_id,
         role: existing.rows[0].role,
         is_active: existing.rows[0].is_active,
@@ -31,36 +102,46 @@ router.post("/auth/register", async (req, res): Promise<void> => {
       return;
     }
 
-    // Also check by email
-    const byEmail = await client.query(
-      "SELECT user_id, role, is_active FROM users WHERE email = $1",
-      [email]
-    );
-
-    if (byEmail.rows[0]) {
-      // Update firebase_uid if missing
-      await client.query(
-        "UPDATE users SET firebase_uid = $1 WHERE email = $2",
-        [firebase_uid, email]
+    // Also check by firebase_uid if provided
+    if (firebase_uid) {
+      const byUid = await client.query(
+        "SELECT user_id, role, is_active FROM users WHERE firebase_uid = $1",
+        [firebase_uid]
       );
-      res.json({
-        user_id: byEmail.rows[0].user_id,
-        role: byEmail.rows[0].role,
-        is_active: byEmail.rows[0].is_active,
-        email,
-      });
-      return;
+      if (byUid.rows[0]) {
+        const token = jwt.sign(
+          { uid: firebase_uid, email },
+          JWT_SECRET,
+          { expiresIn: "7d" }
+        );
+        res.json({
+          token,
+          user_id: byUid.rows[0].user_id,
+          role: byUid.rows[0].role,
+          is_active: byUid.rows[0].is_active,
+          email,
+        });
+        return;
+      }
     }
 
-    // Create new user
+    const password_hash = password ? await bcrypt.hash(password, 10) : null;
+
     const result = await client.query(
-      `INSERT INTO users(firebase_uid, first_name, last_name, email, role, is_active, priority_level)
-       VALUES ($1, $2, $3, $4, 'student', false, 4)
+      `INSERT INTO users(firebase_uid, first_name, last_name, email, role, is_active, priority_level, password_hash)
+       VALUES ($1, $2, $3, $4, 'student', false, 4, $5)
        RETURNING user_id, role, is_active`,
-      [firebase_uid, first_name, last_name, email]
+      [uid, first_name, last_name, email, password_hash]
+    );
+
+    const token = jwt.sign(
+      { uid, email },
+      JWT_SECRET,
+      { expiresIn: "7d" }
     );
 
     res.status(201).json({
+      token,
       user_id: result.rows[0].user_id,
       role: result.rows[0].role,
       is_active: result.rows[0].is_active,
@@ -76,7 +157,9 @@ router.get("/auth/me", verifyToken, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT u.*, d.dept_name as department_name
+      `SELECT u.user_id, u.firebase_uid, u.first_name, u.last_name, u.email,
+              u.phone, u.role, u.is_active, u.priority_level, u.department_id,
+              u.created_at, d.dept_name as department_name
        FROM users u
        LEFT JOIN department d ON d.department_id = u.department_id
        WHERE u.user_id = $1`,

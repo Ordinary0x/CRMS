@@ -3,8 +3,8 @@ import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { getMe } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,7 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { setToken } = useAuth();
 
   const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -33,11 +34,30 @@ export default function Login() {
     setIsLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
-      // AppLayout and ProtectedRoute will handle redirect after dbUser is fetched
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: data.email, password: data.password }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Invalid email or password");
+      }
+
+      const { token, user } = await res.json();
+      setToken(token);
+
+      if (!user.is_active) {
+        setLocation("/pending");
+        return;
+      }
+
+      const rolePrefix = ['student', 'faculty'].includes(user.role) ? 'staff' : user.role === 'resource_manager' ? 'rm' : user.role;
+      setLocation(`/${rolePrefix}/dashboard`);
     } catch (err: any) {
-      console.error(err);
       setError(err.message || "Invalid email or password. Please try again.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -52,7 +72,7 @@ export default function Login() {
           Sign in to CRMBS
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Campus Resource Management and Booking System
+          Campus Resource Management and Booking System — NIT Calicut
         </p>
       </div>
 
@@ -70,25 +90,25 @@ export default function Login() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
-                <Input 
-                  id="email" 
-                  type="email" 
+                <Input
+                  id="email"
+                  type="email"
                   autoComplete="email"
-                  {...register("email")} 
+                  {...register("email")}
                 />
                 {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
+                <Input
+                  id="password"
+                  type="password"
                   autoComplete="current-password"
-                  {...register("password")} 
+                  {...register("password")}
                 />
                 {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
               </div>

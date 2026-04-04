@@ -290,34 +290,50 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
 router.get("/rm/analytics", ...rmAuth, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
-    const stats = await client.query(
-      `SELECT
-       COUNT(b.booking_id)::INT as total_bookings,
-       COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Pending')::INT as pending_bookings,
-       COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Approved')::INT as approved_bookings,
-       COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Rejected')::INT as rejected_bookings,
-       COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Cancelled')::INT as cancelled_bookings
-       FROM booking b
-       JOIN booking_status bs ON bs.status_id = b.status_id
-       JOIN resource r ON r.resource_id = b.resource_id
-       WHERE r.manager_id = $1`,
-      [req.user!.user_id]
-    );
+    const [stats, resourceCounts, byResource] = await Promise.all([
+      client.query(
+        `SELECT
+         COUNT(b.booking_id)::INT as total_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Pending')::INT as pending_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Approved')::INT as approved_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Rejected')::INT as rejected_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Cancelled')::INT as cancelled_bookings
+         FROM booking b
+         JOIN booking_status bs ON bs.status_id = b.status_id
+         JOIN resource r ON r.resource_id = b.resource_id
+         WHERE r.manager_id = $1`,
+        [req.user!.user_id]
+      ),
+      client.query(
+        `SELECT
+         COUNT(*)::INT as total_resources,
+         COUNT(*) FILTER (WHERE status = 'active')::INT as active_resources,
+         COUNT(*) FILTER (WHERE status = 'maintenance')::INT as maintenance_resources
+         FROM resource WHERE manager_id = $1`,
+        [req.user!.user_id]
+      ),
+      client.query(
+        `SELECT r.resource_id, r.resource_name, rc.category_name,
+         COUNT(b.booking_id)::INT as total_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Approved')::INT as approved_bookings,
+         COUNT(b.booking_id) FILTER (WHERE bs.status_name = 'Pending')::INT as pending_bookings,
+         COALESCE(SUM(EXTRACT(EPOCH FROM ((b.date::TIMESTAMP + b.end_time) - (b.date::TIMESTAMP + b.start_time))) / 3600.0), 0) as booked_hours
+         FROM resource r
+         JOIN resource_category rc ON rc.category_id = r.category_id
+         LEFT JOIN booking b ON b.resource_id = r.resource_id
+         LEFT JOIN booking_status bs ON bs.status_id = b.status_id
+         WHERE r.manager_id = $1
+         GROUP BY r.resource_id, r.resource_name, rc.category_name
+         ORDER BY total_bookings DESC`,
+        [req.user!.user_id]
+      ),
+    ]);
 
-    const byResource = await client.query(
-      `SELECT r.resource_id, r.resource_name, rc.category_name,
-       COUNT(b.booking_id)::INT as total_bookings,
-       COALESCE(SUM(EXTRACT(EPOCH FROM ((b.date::TIMESTAMP + b.end_time) - (b.date::TIMESTAMP + b.start_time))) / 3600.0), 0) as booked_hours
-       FROM resource r
-       JOIN resource_category rc ON rc.category_id = r.category_id
-       LEFT JOIN booking b ON b.resource_id = r.resource_id
-       WHERE r.manager_id = $1
-       GROUP BY r.resource_id, r.resource_name, rc.category_name
-       ORDER BY total_bookings DESC`,
-      [req.user!.user_id]
-    );
-
-    res.json({ ...stats.rows[0], utilization_by_resource: byResource.rows });
+    res.json({
+      ...stats.rows[0],
+      ...resourceCounts.rows[0],
+      utilization_by_resource: byResource.rows,
+    });
   } finally {
     client.release();
   }

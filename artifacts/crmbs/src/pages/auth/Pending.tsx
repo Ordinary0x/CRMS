@@ -6,16 +6,17 @@ import { useLocation } from "wouter";
 import { useEffect } from "react";
 
 export default function Pending() {
-  const { dbUser, firebaseUser, logout } = useAuth();
+  const { dbUser, token, logout } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!firebaseUser) {
+    if (!token) {
       setLocation("/login");
     } else if (dbUser?.is_active) {
-      setLocation(`/${dbUser.role === 'student' || dbUser.role === 'faculty' ? 'staff' : dbUser.role}/dashboard`);
+      const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role === 'resource_manager' ? 'rm' : dbUser.role;
+      setLocation(`/${rolePrefix}/dashboard`);
     }
-  }, [firebaseUser, dbUser, setLocation]);
+  }, [token, dbUser, setLocation]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -32,10 +33,10 @@ export default function Pending() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-sm text-gray-600 mb-4">
-              Thank you for registering. Your account ({firebaseUser?.email}) is currently pending activation by an administrator or your Department Head.
+              Thank you for registering. Your account ({dbUser?.email}) is currently pending activation by an administrator or your Department Head.
             </p>
             <p className="text-sm text-gray-600">
-              You will be notified once your account is active.
+              You will be notified once your account has been activated and a role has been assigned.
             </p>
           </CardContent>
           <CardFooter className="flex justify-center border-t bg-gray-50/50 px-6 py-4">

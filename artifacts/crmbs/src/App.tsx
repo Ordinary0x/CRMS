@@ -46,14 +46,14 @@ import StaffNotifications from "@/pages/staff/StaffNotifications";
 const queryClient = new QueryClient();
 
 function RootRedirect() {
-  const { dbUser, firebaseUser, loading } = useAuth();
+  const { dbUser, token, loading } = useAuth();
   
   if (loading) return null;
-  if (!firebaseUser) return <Redirect to="/login" />;
+  if (!token) return <Redirect to="/login" />;
   if (dbUser && !dbUser.is_active) return <Redirect to="/pending" />;
   
   if (dbUser) {
-    const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role;
+    const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role === 'resource_manager' ? 'rm' : dbUser.role;
     return <Redirect to={`/${rolePrefix}/dashboard`} />;
   }
   

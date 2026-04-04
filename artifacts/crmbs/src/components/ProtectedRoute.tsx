@@ -9,12 +9,12 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { firebaseUser, dbUser, loading } = useAuth();
+  const { dbUser, token, loading } = useAuth();
   const [, setLocation] = useLocation();
 
   useEffect(() => {
     if (!loading) {
-      if (!firebaseUser) {
+      if (!token) {
         setLocation('/login');
       } else if (dbUser) {
         if (!dbUser.is_active) {
@@ -24,7 +24,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         }
       }
     }
-  }, [loading, firebaseUser, dbUser, allowedRoles, setLocation]);
+  }, [loading, token, dbUser, allowedRoles, setLocation]);
 
   if (loading) {
     return (
@@ -34,8 +34,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (!firebaseUser || (dbUser && (!dbUser.is_active || (allowedRoles && !allowedRoles.includes(dbUser.role))))) {
-    return null; // Will redirect in useEffect
+  if (!token || (dbUser && (!dbUser.is_active || (allowedRoles && !allowedRoles.includes(dbUser.role))))) {
+    return null;
   }
 
   return <>{children}</>;

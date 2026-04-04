@@ -3,9 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-import { useRegisterUser } from "@workspace/api-client-react";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +24,7 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const registerUserMutation = useRegisterUser();
+  const { setToken } = useAuth();
 
   const { register, handleSubmit, formState: { errors } } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -37,22 +35,28 @@ export default function Register() {
     setIsLoading(true);
     setError(null);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-      
-      // Register user in our backend database
-      await registerUserMutation.mutateAsync({
-        data: {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           first_name: data.firstName,
           last_name: data.lastName,
           email: data.email,
-          firebase_uid: userCredential.user.uid
-        }
+          password: data.password,
+        }),
       });
-      
-      // AppLayout/ProtectedRoute handles redirect
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to register. Please try again.");
+      }
+
+      const result = await res.json();
+      setToken(result.token);
+      setLocation("/pending");
     } catch (err: any) {
-      console.error(err);
       setError(err.message || "Failed to register. Please try again.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -66,13 +70,16 @@ export default function Register() {
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
           Create an account
         </h2>
+        <p className="mt-2 text-center text-sm text-gray-600">
+          NIT Calicut — Campus Resource Management and Booking System
+        </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <Card>
           <CardHeader>
             <CardTitle>Register</CardTitle>
-            <CardDescription>Sign up for CRMBS access. Your account will require approval.</CardDescription>
+            <CardDescription>Sign up for CRMBS access. Your account will require approval before activation.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -82,7 +89,7 @@ export default function Register() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First name</Label>
@@ -98,18 +105,18 @@ export default function Register() {
 
               <div className="space-y-2">
                 <Label htmlFor="email">Institutional email</Label>
-                <Input id="email" type="email" {...register("email")} />
+                <Input id="email" type="email" autoComplete="email" {...register("email")} />
                 {errors.email && <p className="text-sm text-destructive">{errors.email.message}</p>}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" {...register("password")} />
+                <Input id="password" type="password" autoComplete="new-password" {...register("password")} />
                 {errors.password && <p className="text-sm text-destructive">{errors.password.message}</p>}
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading || registerUserMutation.isPending}>
-                {isLoading || registerUserMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Register
               </Button>
             </form>
