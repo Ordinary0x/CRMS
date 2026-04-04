@@ -3,20 +3,36 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Campus Resource Management and Booking System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: admin
+    description: Admin operations
+  - name: hod
+    description: Head of Department operations
+  - name: rm
+    description: Resource Manager operations
+  - name: resources
+    description: Resource discovery
+  - name: bookings
+    description: Booking management
+  - name: analytics
+    description: Analytics and reports
+  - name: notifications
+    description: Notification management
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +40,967 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # AUTH
+  /auth/register:
+    post:
+      operationId: registerUser
+      tags: [auth]
+      summary: Register user after Firebase signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterUserBody"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserResponse"
+        "200":
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  # ADMIN - Users
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [admin]
+      summary: List all users
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+        - name: department_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: is_active
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedUsers"
+
+  /admin/users/{id}/role:
+    patch:
+      operationId: adminUpdateUserRole
+      tags: [admin]
+      summary: Update user role, department, and active status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleBody"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /admin/users/{id}:
+    delete:
+      operationId: adminDeleteUser
+      tags: [admin]
+      summary: Soft delete user (deactivate)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ADMIN - Departments
+  /admin/departments:
+    get:
+      operationId: adminListDepartments
+      tags: [admin]
+      summary: List all departments
+      responses:
+        "200":
+          description: List of departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DepartmentDetail"
+    post:
+      operationId: adminCreateDepartment
+      tags: [admin]
+      summary: Create department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentBody"
+      responses:
+        "201":
+          description: Created department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentDetail"
+
+  /admin/departments/{id}:
+    patch:
+      operationId: adminUpdateDepartment
+      tags: [admin]
+      summary: Update department
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentBody"
+      responses:
+        "200":
+          description: Updated department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepartmentDetail"
+
+  # ADMIN - Blackout
+  /admin/blackout:
+    get:
+      operationId: adminListBlackout
+      tags: [admin]
+      summary: List all blackout periods
+      responses:
+        "200":
+          description: List of blackout periods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlackoutPeriod"
+    post:
+      operationId: adminCreateBlackout
+      tags: [admin]
+      summary: Create blackout period
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBlackoutBody"
+      responses:
+        "201":
+          description: Created blackout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlackoutPeriod"
+
+  /admin/blackout/{id}:
+    delete:
+      operationId: adminDeleteBlackout
+      tags: [admin]
+      summary: Delete blackout period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/audit-log:
+    get:
+      operationId: adminGetAuditLog
+      tags: [admin]
+      summary: Get audit log
+      parameters:
+        - name: table_name
+          in: query
+          schema:
+            type: string
+        - name: operation
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Paginated audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedAuditLog"
+
+  /admin/bookings:
+    get:
+      operationId: adminListBookings
+      tags: [admin]
+      summary: List all bookings system-wide
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: user_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: from_date
+          in: query
+          schema:
+            type: string
+        - name: to_date
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Paginated bookings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedBookings"
+
+  /admin/bookings/{id}/cancel:
+    patch:
+      operationId: adminCancelBooking
+      tags: [admin]
+      summary: Cancel any booking (admin override)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/dashboard:
+    get:
+      operationId: adminDashboard
+      tags: [admin]
+      summary: Admin dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDashboardStats"
+
+  # HOD
+  /hod/users:
+    get:
+      operationId: hodListUsers
+      tags: [hod]
+      summary: List users in own department
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+
+  /hod/users/{id}/activate:
+    patch:
+      operationId: hodActivateUser
+      tags: [hod]
+      summary: Activate user and assign role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateUserBody"
+      responses:
+        "200":
+          description: Activated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /hod/approvals/pending:
+    get:
+      operationId: hodListPendingApprovals
+      tags: [hod]
+      summary: Step-2 pending approvals for own department
+      responses:
+        "200":
+          description: Pending approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalDetail"
+
+  /hod/approvals/{id}/decide:
+    post:
+      operationId: hodDecideApproval
+      tags: [hod]
+      summary: Approve or reject step-2
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionBody"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /hod/bookings:
+    get:
+      operationId: hodListBookings
+      tags: [hod]
+      summary: List bookings by users in own department
+      responses:
+        "200":
+          description: Bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingDetail"
+
+  /hod/analytics:
+    get:
+      operationId: hodAnalytics
+      tags: [hod]
+      summary: Department-scoped analytics
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsSummary"
+
+  # RESOURCE MANAGER
+  /rm/resources:
+    get:
+      operationId: rmListResources
+      tags: [rm]
+      summary: List resources managed by me
+      responses:
+        "200":
+          description: Resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ResourceDetail"
+    post:
+      operationId: rmCreateResource
+      tags: [rm]
+      summary: Create a new resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResourceBody"
+      responses:
+        "201":
+          description: Created resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceDetail"
+
+  /rm/resources/{id}:
+    patch:
+      operationId: rmUpdateResource
+      tags: [rm]
+      summary: Update resource
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResourceBody"
+      responses:
+        "200":
+          description: Updated resource
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceDetail"
+
+  /rm/resources/{id}/status:
+    patch:
+      operationId: rmUpdateResourceStatus
+      tags: [rm]
+      summary: Update resource status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResourceStatusBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /rm/resources/{id}/unavailability:
+    post:
+      operationId: rmAddUnavailability
+      tags: [rm]
+      summary: Add maintenance window
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUnavailabilityBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceUnavailability"
+
+  /rm/resources/{id}/unavailability/{uid}:
+    delete:
+      operationId: rmDeleteUnavailability
+      tags: [rm]
+      summary: Delete maintenance window
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /rm/approvals/pending:
+    get:
+      operationId: rmListPendingApprovals
+      tags: [rm]
+      summary: Step-1 pending approvals for my resources
+      responses:
+        "200":
+          description: Pending approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalDetail"
+
+  /rm/approvals/{id}/decide:
+    post:
+      operationId: rmDecideApproval
+      tags: [rm]
+      summary: Approve or reject step-1
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionBody"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /rm/analytics:
+    get:
+      operationId: rmAnalytics
+      tags: [rm]
+      summary: Resource-scoped analytics
+      responses:
+        "200":
+          description: Analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsSummary"
+
+  /rm/dashboard:
+    get:
+      operationId: rmDashboard
+      tags: [rm]
+      summary: Resource Manager dashboard stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RmDashboardStats"
+
+  # RESOURCES (all users)
+  /resources:
+    get:
+      operationId: listResources
+      tags: [resources]
+      summary: Search resources with availability
+      parameters:
+        - name: category_id
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: min_capacity
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: date
+          in: query
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          schema:
+            type: string
+        - name: end_time
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resources with availability
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ResourceWithAvailability"
+
+  /resources/categories:
+    get:
+      operationId: listResourceCategories
+      tags: [resources]
+      summary: List all resource categories
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ResourceCategory"
+
+  /resources/{id}:
+    get:
+      operationId: getResource
+      tags: [resources]
+      summary: Resource detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Resource detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceDetail"
+
+  /resources/{id}/availability:
+    get:
+      operationId: getResourceAvailability
+      tags: [resources]
+      summary: Get availability for a specific date
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Availability slots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilitySlots"
+
+  # BOOKINGS
+  /bookings:
+    post:
+      operationId: createBooking
+      tags: [bookings]
+      summary: Create a new booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingBody"
+      responses:
+        "201":
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateBookingResponse"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingConflictResponse"
+    get:
+      operationId: listMyBookings
+      tags: [bookings]
+      summary: My bookings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: from_date
+          in: query
+          schema:
+            type: string
+        - name: to_date
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: My bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingDetail"
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [bookings]
+      summary: Get booking detail with approval trail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingDetail"
+
+  /bookings/{id}/cancel:
+    patch:
+      operationId: cancelBooking
+      tags: [bookings]
+      summary: Cancel my booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ANALYTICS
+  /analytics/utilization:
+    get:
+      operationId: getUtilization
+      tags: [analytics]
+      summary: Resource utilization from materialized view
+      responses:
+        "200":
+          description: Utilization data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UtilizationRecord"
+
+  /analytics/busiest-resources:
+    get:
+      operationId: getBusiestResources
+      tags: [analytics]
+      summary: Top busiest resources
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Busiest resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusiestResource"
+
+  /analytics/by-department:
+    get:
+      operationId: getAnalyticsByDepartment
+      tags: [analytics]
+      summary: Bookings by department
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Department analytics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeptAnalytics"
+
+  /analytics/approval-stats:
+    get:
+      operationId: getApprovalStats
+      tags: [analytics]
+      summary: Approval turnaround and rejection stats
+      responses:
+        "200":
+          description: Approval stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalStats"
+
+  # NOTIFICATIONS
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: My notifications (last 50)
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/unread-count:
+    get:
+      operationId: getUnreadNotificationCount
+      tags: [notifications]
+      summary: Unread notification count
+      responses:
+        "200":
+          description: Count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnreadCount"
+
+  /notifications/{id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +1008,684 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    RegisterUserBody:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        firebase_uid:
+          type: string
+      required: [first_name, last_name, email, firebase_uid]
+
+    AuthUserResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        role:
+          type: string
+        is_active:
+          type: boolean
+        email:
+          type: string
+      required: [user_id, role, is_active, email]
+
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        firebase_uid:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        role:
+          type: string
+        is_active:
+          type: boolean
+        priority_level:
+          type: integer
+        department_id:
+          type: ["integer", "null"]
+        department_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required: [user_id, firebase_uid, first_name, last_name, email, role, is_active, priority_level]
+
+    User:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        role:
+          type: string
+        is_active:
+          type: boolean
+        priority_level:
+          type: integer
+        department_id:
+          type: ["integer", "null"]
+        department_name:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required: [user_id, first_name, last_name, email, role, is_active, priority_level]
+
+    PaginatedUsers:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [data, total, page, limit]
+
+    UpdateUserRoleBody:
+      type: object
+      properties:
+        role:
+          type: string
+        is_active:
+          type: boolean
+        department_id:
+          type: ["integer", "null"]
+      required: [role]
+
+    ActivateUserBody:
+      type: object
+      properties:
+        role:
+          type: string
+      required: [role]
+
+    DepartmentDetail:
+      type: object
+      properties:
+        department_id:
+          type: integer
+        dept_name:
+          type: string
+        building:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        hod_id:
+          type: ["integer", "null"]
+        hod_name:
+          type: ["string", "null"]
+        user_count:
+          type: integer
+      required: [department_id, dept_name, user_count]
+
+    CreateDepartmentBody:
+      type: object
+      properties:
+        dept_name:
+          type: string
+        building:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        hod_id:
+          type: ["integer", "null"]
+      required: [dept_name]
+
+    BlackoutPeriod:
+      type: object
+      properties:
+        blackout_id:
+          type: integer
+        category_id:
+          type: ["integer", "null"]
+        category_name:
+          type: ["string", "null"]
+        start_date:
+          type: string
+        end_date:
+          type: string
+        reason:
+          type: ["string", "null"]
+      required: [blackout_id, start_date, end_date]
+
+    CreateBlackoutBody:
+      type: object
+      properties:
+        category_id:
+          type: ["integer", "null"]
+        start_date:
+          type: string
+        end_date:
+          type: string
+        reason:
+          type: ["string", "null"]
+      required: [start_date, end_date]
+
+    AuditLogEntry:
+      type: object
+      properties:
+        audit_id:
+          type: integer
+        table_name:
+          type: string
+        operation:
+          type: string
+        old_data:
+          type: ["object", "null"]
+        new_data:
+          type: ["object", "null"]
+        changed_by:
+          type: ["integer", "null"]
+        changed_by_name:
+          type: ["string", "null"]
+        changed_at:
+          type: string
+      required: [audit_id, table_name, operation, changed_at]
+
+    PaginatedAuditLog:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [data, total, page, limit]
+
+    BookingDetail:
+      type: object
+      properties:
+        booking_id:
+          type: integer
+        user_id:
+          type: integer
+        user_name:
+          type: string
+        resource_id:
+          type: integer
+        resource_name:
+          type: string
+        category_name:
+          type: string
+        status_id:
+          type: integer
+        status_name:
+          type: string
+        priority_level:
+          type: integer
+        date:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+        purpose:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        approvals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRecord"
+      required: [booking_id, user_id, user_name, resource_id, resource_name, category_name, status_id, status_name, priority_level, date, start_time, end_time, created_at, approvals]
+
+    ApprovalRecord:
+      type: object
+      properties:
+        approval_id:
+          type: integer
+        step_number:
+          type: integer
+        decision:
+          type: ["string", "null"]
+        approver_name:
+          type: ["string", "null"]
+        remarks:
+          type: ["string", "null"]
+        approval_time:
+          type: ["string", "null"]
+      required: [approval_id, step_number]
+
+    PaginatedBookings:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingDetail"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [data, total, page, limit]
+
+    ResourceCategory:
+      type: object
+      properties:
+        category_id:
+          type: integer
+        category_name:
+          type: string
+        advance_days:
+          type: integer
+        approval_steps:
+          type: integer
+      required: [category_id, category_name, advance_days, approval_steps]
+
+    ResourceDetail:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+        resource_name:
+          type: string
+        capacity:
+          type: integer
+        location:
+          type: ["string", "null"]
+        status:
+          type: string
+        features:
+          type: object
+        category_id:
+          type: integer
+        category_name:
+          type: string
+        approval_steps:
+          type: integer
+        manager_id:
+          type: ["integer", "null"]
+        manager_name:
+          type: ["string", "null"]
+        department_id:
+          type: ["integer", "null"]
+        department_name:
+          type: ["string", "null"]
+        unavailability:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceUnavailability"
+      required: [resource_id, resource_name, capacity, status, features, category_id, category_name, approval_steps]
+
+    ResourceWithAvailability:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+        resource_name:
+          type: string
+        capacity:
+          type: integer
+        location:
+          type: ["string", "null"]
+        status:
+          type: string
+        features:
+          type: object
+        category_id:
+          type: integer
+        category_name:
+          type: string
+        approval_steps:
+          type: integer
+        manager_name:
+          type: ["string", "null"]
+        is_available:
+          type: boolean
+      required: [resource_id, resource_name, capacity, status, features, category_id, category_name, approval_steps, is_available]
+
+    CreateResourceBody:
+      type: object
+      properties:
+        resource_name:
+          type: string
+        capacity:
+          type: integer
+        location:
+          type: ["string", "null"]
+        status:
+          type: string
+        features:
+          type: object
+        category_id:
+          type: integer
+        department_id:
+          type: ["integer", "null"]
+      required: [resource_name, capacity, category_id]
+
+    UpdateResourceStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ResourceUnavailability:
+      type: object
+      properties:
+        unavail_id:
+          type: integer
+        resource_id:
+          type: integer
+        day_of_week:
+          type: ["integer", "null"]
+        start_time:
+          type: string
+        end_time:
+          type: string
+        label:
+          type: ["string", "null"]
+      required: [unavail_id, resource_id, start_time, end_time]
+
+    CreateUnavailabilityBody:
+      type: object
+      properties:
+        day_of_week:
+          type: ["integer", "null"]
+        start_time:
+          type: string
+        end_time:
+          type: string
+        label:
+          type: ["string", "null"]
+      required: [start_time, end_time]
+
+    AvailabilitySlots:
+      type: object
+      properties:
+        busy_slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeSlot"
+        free_slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeSlot"
+      required: [busy_slots, free_slots]
+
+    TimeSlot:
+      type: object
+      properties:
+        start_time:
+          type: string
+        end_time:
+          type: string
+        booking_id:
+          type: ["integer", "null"]
+        purpose:
+          type: ["string", "null"]
+      required: [start_time, end_time]
+
+    CreateBookingBody:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+        date:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+        purpose:
+          type: ["string", "null"]
+      required: [resource_id, date, start_time, end_time]
+
+    CreateBookingResponse:
+      type: object
+      properties:
+        booking_id:
+          type: integer
+        status:
+          type: string
+        approval_steps:
+          type: integer
+      required: [booking_id, status, approval_steps]
+
+    BookingConflictResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        alternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeSlot"
+      required: [message, alternatives]
+
+    ApprovalDetail:
+      type: object
+      properties:
+        approval_id:
+          type: integer
+        booking_id:
+          type: integer
+        step_number:
+          type: integer
+        decision:
+          type: ["string", "null"]
+        remarks:
+          type: ["string", "null"]
+        approval_time:
+          type: ["string", "null"]
+        requester_name:
+          type: string
+        requester_email:
+          type: string
+        resource_name:
+          type: string
+        category_name:
+          type: string
+        date:
+          type: string
+        start_time:
+          type: string
+        end_time:
+          type: string
+        purpose:
+          type: ["string", "null"]
+        priority_level:
+          type: integer
+        created_at:
+          type: string
+        step1_approved_by:
+          type: ["string", "null"]
+      required: [approval_id, booking_id, step_number, requester_name, requester_email, resource_name, category_name, date, start_time, end_time, priority_level, created_at]
+
+    ApprovalDecisionBody:
+      type: object
+      properties:
+        decision:
+          type: string
+        remarks:
+          type: ["string", "null"]
+      required: [decision]
+
+    UtilizationRecord:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+        resource_name:
+          type: string
+        category_name:
+          type: string
+        week_start:
+          type: string
+        total_bookings:
+          type: integer
+        booked_hours:
+          type: number
+      required: [resource_id, resource_name, category_name, week_start, total_bookings, booked_hours]
+
+    BusiestResource:
+      type: object
+      properties:
+        resource_id:
+          type: integer
+        resource_name:
+          type: string
+        category_name:
+          type: string
+        total_bookings:
+          type: integer
+        booked_hours:
+          type: number
+      required: [resource_id, resource_name, category_name, total_bookings, booked_hours]
+
+    DeptAnalytics:
+      type: object
+      properties:
+        department_id:
+          type: integer
+        dept_name:
+          type: string
+        total_bookings:
+          type: integer
+        approved_bookings:
+          type: integer
+        rejected_bookings:
+          type: integer
+      required: [department_id, dept_name, total_bookings, approved_bookings, rejected_bookings]
+
+    ApprovalStats:
+      type: object
+      properties:
+        avg_step1_hours:
+          type: number
+        avg_step2_hours:
+          type: number
+        total_approved:
+          type: integer
+        total_rejected:
+          type: integer
+        rejection_rate:
+          type: number
+      required: [avg_step1_hours, avg_step2_hours, total_approved, total_rejected, rejection_rate]
+
+    AnalyticsSummary:
+      type: object
+      properties:
+        total_bookings:
+          type: integer
+        pending_bookings:
+          type: integer
+        approved_bookings:
+          type: integer
+        rejected_bookings:
+          type: integer
+        cancelled_bookings:
+          type: integer
+        utilization_by_resource:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusiestResource"
+      required: [total_bookings, pending_bookings, approved_bookings, rejected_bookings, cancelled_bookings, utilization_by_resource]
+
+    AdminDashboardStats:
+      type: object
+      properties:
+        total_users:
+          type: integer
+        total_resources:
+          type: integer
+        bookings_today:
+          type: integer
+        pending_approvals:
+          type: integer
+        recent_audit_log:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        busiest_resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusiestResource"
+      required: [total_users, total_resources, bookings_today, pending_approvals, recent_audit_log, busiest_resources]
+
+    RmDashboardStats:
+      type: object
+      properties:
+        my_resources:
+          type: integer
+        pending_approvals:
+          type: integer
+        todays_bookings:
+          type: integer
+        status_breakdown:
+          type: object
+          properties:
+            active:
+              type: integer
+            inactive:
+              type: integer
+            maintenance:
+              type: integer
+          required: [active, inactive, maintenance]
+      required: [my_resources, pending_approvals, todays_bookings, status_breakdown]
+
+    Notification:
+      type: object
+      properties:
+        notification_id:
+          type: integer
+        user_id:
+          type: integer
+        message:
+          type: string
+        channel:
+          type: string
+        status:
+          type: string
+        read_at:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required: [notification_id, user_id, message, channel, status, created_at]
+
+    UnreadCount:
+      type: object
+      properties:
+        count:
+          type: integer
+      required: [count]

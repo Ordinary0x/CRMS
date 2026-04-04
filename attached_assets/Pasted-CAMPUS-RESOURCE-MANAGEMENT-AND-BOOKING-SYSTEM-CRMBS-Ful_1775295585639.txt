@@ -1,0 +1,1046 @@
+CAMPUS RESOURCE MANAGEMENT AND BOOKING SYSTEM (CRMBS)
+Full-Stack Web Application — Complete Build Prompt for Replit
+======================================================================
+
+Build a production-quality, full-stack web application called the
+"Campus Resource Management and Booking System" (CRMBS) for
+NIT Calicut. This is a DBMS-focused academic project.
+
+----------------------------------------------------------------------
+TECH STACK
+----------------------------------------------------------------------
+Frontend  : React 18 + Vite + Tailwind CSS v3 + React Router v6
+Backend   : Node.js 20 + Express.js
+Database  : PostgreSQL 15 (use pg / node-postgres)
+Auth      : Firebase Authentication (email + password)
+State     : React Context API (no Redux needed)
+Charts    : Recharts
+Icons     : Lucide React
+Forms     : React Hook Form
+HTTP      : Axios
+
+----------------------------------------------------------------------
+PROJECT STRUCTURE
+----------------------------------------------------------------------
+/
+├── client/                  (React + Vite frontend)
+│   ├── src/
+│   │   ├── components/      (reusable UI components)
+│   │   ├── pages/           (one folder per role)
+│   │   │   ├── auth/
+│   │   │   ├── admin/
+│   │   │   ├── hod/
+│   │   │   ├── resource-manager/
+│   │   │   ├── staff/
+│   │   │   └── student/
+│   │   ├── context/         (AuthContext, NotificationContext)
+│   │   ├── hooks/           (useAuth, useBooking, useRole)
+│   │   ├── services/        (api.js — axios instance)
+│   │   └── utils/
+│   └── index.html
+│
+├── server/                  (Express backend)
+│   ├── routes/
+│   │   ├── auth.js
+│   │   ├── admin.js
+│   │   ├── hod.js
+│   │   ├── resourceManager.js
+│   │   ├── resources.js
+│   │   ├── bookings.js
+│   │   ├── approvals.js
+│   │   ├── analytics.js
+│   │   └── notifications.js
+│   ├── middleware/
+│   │   ├── verifyToken.js   (Firebase JWT verification)
+│   │   ├── checkRole.js     (RBAC enforcement)
+│   │   └── rateLimiter.js
+│   ├── db/
+│   │   ├── pool.js          (pg connection pool)
+│   │   └── schema.sql       (full DDL)
+│   └── index.js
+│
+├── .env
+└── package.json
+
+----------------------------------------------------------------------
+ENVIRONMENT VARIABLES (.env)
+----------------------------------------------------------------------
+# PostgreSQL
+DATABASE_URL=postgresql://user:password@localhost:5432/crmbs
+
+# Firebase Admin SDK (backend)
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+
+# Firebase Client SDK (frontend — use Vite env prefix VITE_)
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+
+PORT=5000
+
+----------------------------------------------------------------------
+DATABASE SCHEMA (PostgreSQL 15) — schema.sql
+----------------------------------------------------------------------
+Run this entire file on startup. Use IF NOT EXISTS on all tables.
+
+-- Required extension
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- 1. DEPARTMENT
+CREATE TABLE IF NOT EXISTS department (
+  department_id  SERIAL PRIMARY KEY,
+  dept_name      VARCHAR(120) NOT NULL UNIQUE,
+  building       VARCHAR(80),
+  email          VARCHAR(120),
+  hod_id         INT           -- FK added after users table
+);
+
+-- 2. USERS
+CREATE TABLE IF NOT EXISTS users (
+  user_id        SERIAL PRIMARY KEY,
+  firebase_uid   VARCHAR(128) NOT NULL UNIQUE,
+  first_name     VARCHAR(60)  NOT NULL,
+  last_name      VARCHAR(60)  NOT NULL,
+  email          VARCHAR(120) NOT NULL UNIQUE,
+  phone          VARCHAR(20),
+  role           VARCHAR(30)  NOT NULL DEFAULT 'student'
+                   CHECK (role IN ('admin','hod','resource_manager',
+                                   'staff','faculty','student')),
+  is_active      BOOLEAN      NOT NULL DEFAULT FALSE,
+  priority_level SMALLINT     NOT NULL DEFAULT 4,
+  department_id  INT REFERENCES department(department_id) ON DELETE SET NULL,
+  created_at     TIMESTAMPTZ  DEFAULT now()
+);
+
+-- Add FK back to department
+ALTER TABLE department
+  ADD CONSTRAINT fk_hod
+  FOREIGN KEY (hod_id) REFERENCES users(user_id) ON DELETE SET NULL;
+
+-- 3. RESOURCE CATEGORY
+CREATE TABLE IF NOT EXISTS resource_category (
+  category_id       SERIAL PRIMARY KEY,
+  category_name     VARCHAR(80) NOT NULL UNIQUE,
+  advance_days      SMALLINT    NOT NULL DEFAULT 90,
+  approval_steps    SMALLINT    NOT NULL DEFAULT 0
+                      CHECK (approval_steps IN (0,1,2))
+  -- 0 = auto-approve, 1 = RM only, 2 = RM then HOD
+);
+
+-- 4. RESOURCE
+CREATE TABLE IF NOT EXISTS resource (
+  resource_id   SERIAL PRIMARY KEY,
+  resource_name VARCHAR(120) NOT NULL,
+  capacity      SMALLINT     NOT NULL CHECK (capacity > 0),
+  location      VARCHAR(120),
+  status        VARCHAR(20)  NOT NULL DEFAULT 'active'
+                  CHECK (status IN ('active','inactive','maintenance')),
+  features      JSONB        NOT NULL DEFAULT '{}',
+  category_id   INT          NOT NULL REFERENCES resource_category(category_id),
+  manager_id    INT          REFERENCES users(user_id) ON DELETE SET NULL,
+  department_id INT          REFERENCES department(department_id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resource_category ON resource(category_id);
+CREATE INDEX IF NOT EXISTS idx_resource_features  ON resource USING GIN(features);
+
+-- 5. BOOKING STATUS (lookup)
+CREATE TABLE IF NOT EXISTS booking_status (
+  status_id   SERIAL PRIMARY KEY,
+  status_name VARCHAR(30) NOT NULL UNIQUE
+);
+INSERT INTO booking_status (status_name)
+VALUES ('Pending'),('Approved'),('Rejected'),('Cancelled'),('Completed')
+ON CONFLICT DO NOTHING;
+
+-- 6. PRIORITY (lookup)
+CREATE TABLE IF NOT EXISTS priority (
+  priority_id    SERIAL PRIMARY KEY,
+  priority_level SMALLINT    NOT NULL UNIQUE CHECK (priority_level BETWEEN 1 AND 4),
+  description    VARCHAR(60)
+);
+INSERT INTO priority (priority_level, description) VALUES
+  (1,'System Administrator'),(2,'Manager'),(3,'Staff/Faculty'),(4,'Student')
+ON CONFLICT DO NOTHING;
+
+-- 7. RECURRENCE
+CREATE TABLE IF NOT EXISTS recurrence (
+  recurrence_id     SERIAL PRIMARY KEY,
+  rrule             TEXT NOT NULL,
+  parent_booking_id INT
+);
+
+-- 8. BOOKING (partitioned by year — use simple table for Replit)
+CREATE TABLE IF NOT EXISTS booking (
+  booking_id    BIGSERIAL PRIMARY KEY,
+  user_id       INT         NOT NULL REFERENCES users(user_id),
+  resource_id   INT         NOT NULL REFERENCES resource(resource_id),
+  status_id     INT         NOT NULL REFERENCES booking_status(status_id),
+  priority_level SMALLINT   NOT NULL DEFAULT 4,
+  recurrence_id INT         REFERENCES recurrence(recurrence_id),
+  date          DATE        NOT NULL,
+  start_time    TIME        NOT NULL,
+  end_time      TIME        NOT NULL,
+  purpose       TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT chk_time_order CHECK (start_time < end_time),
+  CONSTRAINT no_overlap EXCLUDE USING gist (
+    resource_id WITH =,
+    tsrange(date + start_time, date + end_time) WITH &&
+  ) WHERE (status_id IN (
+    SELECT status_id FROM booking_status
+    WHERE status_name IN ('Pending','Approved')
+  ))
+);
+CREATE INDEX IF NOT EXISTS idx_booking_resource_time
+  ON booking(resource_id, date, start_time, end_time);
+CREATE INDEX IF NOT EXISTS idx_booking_user   ON booking(user_id);
+CREATE INDEX IF NOT EXISTS idx_booking_status ON booking(status_id);
+
+-- 9. APPROVAL
+CREATE TABLE IF NOT EXISTS approval (
+  approval_id   SERIAL PRIMARY KEY,
+  booking_id    INT         NOT NULL REFERENCES booking(booking_id),
+  approver_id   INT         REFERENCES users(user_id),
+  step_number   SMALLINT    NOT NULL CHECK (step_number IN (1,2)),
+  decision      VARCHAR(20) CHECK (decision IN ('Approved','Rejected')),
+  remarks       TEXT,
+  approval_time TIMESTAMPTZ
+);
+
+-- 10. LOG (application-level)
+CREATE TABLE IF NOT EXISTS log (
+  log_id      BIGSERIAL PRIMARY KEY,
+  user_id     INT REFERENCES users(user_id),
+  booking_id  INT REFERENCES booking(booking_id),
+  action_type VARCHAR(60) NOT NULL,
+  description TEXT,
+  timestamp   TIMESTAMPTZ DEFAULT now()
+);
+
+-- 11. AUDIT LOG (trigger-maintained, IMMUTABLE)
+CREATE TABLE IF NOT EXISTS audit_log (
+  audit_id    BIGSERIAL PRIMARY KEY,
+  table_name  VARCHAR(60)  NOT NULL,
+  operation   VARCHAR(10)  NOT NULL,
+  old_data    JSONB,
+  new_data    JSONB,
+  changed_by  INT          REFERENCES users(user_id),
+  changed_at  TIMESTAMPTZ  DEFAULT now()
+);
+-- Block UPDATE and DELETE on audit_log for ALL roles
+CREATE OR REPLACE RULE no_update_audit
+  AS ON UPDATE TO audit_log DO INSTEAD NOTHING;
+CREATE OR REPLACE RULE no_delete_audit
+  AS ON DELETE TO audit_log DO INSTEAD NOTHING;
+
+-- 12. NOTIFICATION
+CREATE TABLE IF NOT EXISTS notification (
+  notification_id SERIAL PRIMARY KEY,
+  user_id         INT         NOT NULL REFERENCES users(user_id),
+  message         TEXT        NOT NULL,
+  channel         VARCHAR(10) DEFAULT 'email'
+                    CHECK (channel IN ('email','sms','push')),
+  status          VARCHAR(20) DEFAULT 'pending'
+                    CHECK (status IN ('pending','sent','failed')),
+  retry_count     SMALLINT    DEFAULT 0,
+  sent_at         TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  read_at         TIMESTAMPTZ
+);
+
+-- 13. BLACKOUT PERIOD
+CREATE TABLE IF NOT EXISTS blackout_period (
+  blackout_id SERIAL PRIMARY KEY,
+  category_id INT  REFERENCES resource_category(category_id),
+  start_date  DATE NOT NULL,
+  end_date    DATE NOT NULL,
+  reason      VARCHAR(200),
+  CONSTRAINT chk_blackout CHECK (start_date <= end_date)
+);
+
+-- 14. RESOURCE UNAVAILABILITY (recurring maintenance windows)
+CREATE TABLE IF NOT EXISTS resource_unavailability (
+  unavail_id  SERIAL PRIMARY KEY,
+  resource_id INT         NOT NULL REFERENCES resource(resource_id),
+  day_of_week SMALLINT    CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday
+  start_time  TIME        NOT NULL,
+  end_time    TIME        NOT NULL,
+  label       VARCHAR(80)
+);
+
+-- MATERIALIZED VIEW for analytics
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_resource_utilization AS
+  SELECT
+    r.resource_id,
+    r.resource_name,
+    rc.category_name,
+    date_trunc('week', b.date::TIMESTAMP) AS week_start,
+    COUNT(b.booking_id)                   AS total_bookings,
+    SUM(EXTRACT(EPOCH FROM (
+      (b.date + b.end_time) - (b.date + b.start_time)
+    )) / 3600.0)                          AS booked_hours
+  FROM booking b
+  JOIN resource r        ON r.resource_id  = b.resource_id
+  JOIN resource_category rc ON rc.category_id = r.category_id
+  WHERE b.status_id IN (
+    SELECT status_id FROM booking_status
+    WHERE status_name IN ('Approved','Completed')
+  )
+  GROUP BY r.resource_id, r.resource_name, rc.category_name,
+           date_trunc('week', b.date::TIMESTAMP)
+WITH DATA;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_util
+  ON mv_resource_utilization(resource_id, week_start);
+
+-- AUDIT TRIGGER
+CREATE OR REPLACE FUNCTION fn_audit_trigger()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO audit_log(table_name, operation, old_data, new_data, changed_at)
+  VALUES (
+    TG_TABLE_NAME,
+    TG_OP,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE row_to_json(OLD)::JSONB END,
+    CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE row_to_json(NEW)::JSONB END,
+    now()
+  );
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER trg_audit_booking
+  AFTER INSERT OR UPDATE OR DELETE ON booking
+  FOR EACH ROW EXECUTE FUNCTION fn_audit_trigger();
+
+CREATE OR REPLACE TRIGGER trg_audit_users
+  AFTER INSERT OR UPDATE OR DELETE ON users
+  FOR EACH ROW EXECUTE FUNCTION fn_audit_trigger();
+
+CREATE OR REPLACE TRIGGER trg_audit_resource
+  AFTER INSERT OR UPDATE OR DELETE ON resource
+  FOR EACH ROW EXECUTE FUNCTION fn_audit_trigger();
+
+-- CREATE BOOKING STORED PROCEDURE
+CREATE OR REPLACE FUNCTION create_booking(
+  p_user_id     INT,
+  p_resource_id INT,
+  p_date        DATE,
+  p_start       TIME,
+  p_end         TIME,
+  p_purpose     TEXT DEFAULT NULL
+) RETURNS BIGINT LANGUAGE plpgsql AS $$
+DECLARE
+  v_booking_id    BIGINT;
+  v_status_id     INT;
+  v_approval_steps SMALLINT;
+  v_adv_days      INT;
+  v_conflict_cnt  INT;
+  v_priority      SMALLINT;
+BEGIN
+  -- 1. Validate time order
+  IF p_start >= p_end THEN
+    RAISE EXCEPTION 'start_time must be before end_time';
+  END IF;
+
+  -- 2. Get advance window and approval steps
+  SELECT rc.advance_days, rc.approval_steps
+    INTO v_adv_days, v_approval_steps
+  FROM resource r
+  JOIN resource_category rc ON rc.category_id = r.category_id
+  WHERE r.resource_id = p_resource_id;
+
+  IF p_date > CURRENT_DATE + v_adv_days THEN
+    RAISE EXCEPTION 'Booking date exceeds advance window of % days', v_adv_days;
+  END IF;
+
+  -- 3. Check blackout period
+  IF EXISTS (
+    SELECT 1 FROM blackout_period bp
+    JOIN resource r ON r.category_id = bp.category_id
+    WHERE r.resource_id = p_resource_id
+      AND p_date BETWEEN bp.start_date AND bp.end_date
+  ) THEN
+    RAISE EXCEPTION 'Date falls within a blackout period';
+  END IF;
+
+  -- 4. Check recurring unavailability
+  IF EXISTS (
+    SELECT 1 FROM resource_unavailability ru
+    WHERE ru.resource_id = p_resource_id
+      AND ru.day_of_week  = EXTRACT(DOW FROM p_date)
+      AND ru.start_time   < p_end
+      AND ru.end_time     > p_start
+  ) THEN
+    RAISE EXCEPTION 'Resource is unavailable (maintenance window)';
+  END IF;
+
+  -- 5. Advisory lock — serializes concurrent requests for this resource
+  PERFORM pg_advisory_xact_lock(p_resource_id);
+
+  -- 6. Conflict check
+  SELECT COUNT(*) INTO v_conflict_cnt
+  FROM booking
+  WHERE resource_id = p_resource_id
+    AND date        = p_date
+    AND status_id   IN (
+      SELECT status_id FROM booking_status
+      WHERE status_name IN ('Pending','Approved')
+    )
+    AND start_time  < p_end
+    AND end_time    > p_start;
+
+  IF v_conflict_cnt > 0 THEN
+    RAISE EXCEPTION 'CONFLICT: resource already booked for that slot'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  -- 7. Determine status
+  IF v_approval_steps = 0 THEN
+    SELECT status_id INTO v_status_id
+    FROM booking_status WHERE status_name = 'Approved';
+  ELSE
+    SELECT status_id INTO v_status_id
+    FROM booking_status WHERE status_name = 'Pending';
+  END IF;
+
+  -- 8. Get user priority
+  SELECT priority_level INTO v_priority FROM users WHERE user_id = p_user_id;
+
+  -- 9. Insert booking
+  INSERT INTO booking(user_id, resource_id, status_id, priority_level,
+                      date, start_time, end_time, purpose)
+  VALUES (p_user_id, p_resource_id, v_status_id, v_priority,
+          p_date, p_start, p_end, p_purpose)
+  RETURNING booking_id INTO v_booking_id;
+
+  -- 10. Insert confirmation notification
+  INSERT INTO notification(user_id, message, channel)
+  VALUES (p_user_id,
+          'Booking #' || v_booking_id || ' created for ' || p_date,
+          'email');
+
+  -- 11. If approval needed, create approval record and notify RM
+  IF v_approval_steps >= 1 THEN
+    INSERT INTO approval(booking_id, step_number)
+    VALUES (v_booking_id, 1);
+  END IF;
+
+  RETURN v_booking_id;
+END;
+$$;
+
+----------------------------------------------------------------------
+BACKEND — EXPRESS.JS
+----------------------------------------------------------------------
+
+## server/db/pool.js
+const { Pool } = require('pg');
+module.exports = new Pool({ connectionString: process.env.DATABASE_URL });
+
+## server/middleware/verifyToken.js
+const admin = require('firebase-admin');
+module.exports = async (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer '))
+    return res.status(401).json({ error: 'No token' });
+  try {
+    const decoded = await admin.auth().verifyIdToken(header.split(' ')[1]);
+    req.firebaseUid = decoded.uid;
+    req.firebaseEmail = decoded.email;
+    // Look up role from DB
+    const pool = require('../db/pool');
+    const { rows } = await pool.query(
+      'SELECT * FROM users WHERE firebase_uid = $1', [decoded.uid]
+    );
+    if (!rows[0]) return res.status(403).json({ error: 'User not registered' });
+    if (!rows[0].is_active) return res.status(403).json({ error: 'Account inactive' });
+    req.user = rows[0];
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+## server/middleware/checkRole.js
+module.exports = (...roles) => (req, res, next) => {
+  if (!roles.includes(req.user.role))
+    return res.status(403).json({ error: 'Forbidden' });
+  next();
+};
+
+----------------------------------------------------------------------
+BACKEND API ROUTES — implement all of these
+----------------------------------------------------------------------
+
+### AUTH ROUTES /api/auth
+POST /register
+  - Verifies Firebase JWT
+  - Creates users row if not exists:
+    firebase_uid, email, first_name, last_name, role='student', is_active=false
+  - Returns { user_id, role, is_active }
+
+GET /me
+  - Returns full user profile + department name
+
+### ADMIN ROUTES /api/admin  (role: admin)
+GET    /users                     — all users, filter by role/dept/status/search
+PATCH  /users/:id/role            — update role + is_active + department_id
+                                    also updates priority_level based on role
+DELETE /users/:id                 — soft delete (set is_active=false)
+GET    /departments               — list all departments
+POST   /departments               — create dept { dept_name, building, email, hod_id }
+PATCH  /departments/:id           — update dept / reassign HOD
+GET    /blackout                  — list all blackout periods
+POST   /blackout                  — create blackout { category_id, start_date, end_date, reason }
+DELETE /blackout/:id              — delete blackout
+GET    /audit-log                 — paginated audit log, filter by table/operation/user/date
+GET    /bookings                  — ALL bookings system-wide, filter by user/resource/dept/status/date
+PATCH  /bookings/:id/cancel       — cancel any booking (admin override)
+
+### HOD ROUTES /api/hod  (role: hod)
+GET    /users                     — users in own department only
+PATCH  /users/:id/activate        — activate user + assign role (staff/faculty/resource_manager only)
+GET    /approvals/pending         — step-2 approvals for resources in own dept
+POST   /approvals/:id/decide      — { decision: 'Approved'|'Rejected', remarks }
+                                    remarks required on rejection
+GET    /bookings                  — all bookings by users in own dept
+GET    /analytics                 — dept-scoped analytics
+
+### RESOURCE MANAGER ROUTES /api/rm  (role: resource_manager)
+GET    /resources                 — resources where manager_id = me
+POST   /resources                 — create resource
+PATCH  /resources/:id             — update resource (must own it)
+PATCH  /resources/:id/status      — set active/inactive/maintenance
+POST   /resources/:id/unavailability  — add maintenance window
+DELETE /resources/:id/unavailability/:uid
+GET    /approvals/pending         — step-1 approvals for my resources
+POST   /approvals/:id/decide      — approve or reject step-1
+GET    /analytics                 — resource-scoped analytics
+
+### RESOURCES ROUTES /api/resources  (all authenticated users)
+GET    /                          — search: ?category_id=&min_capacity=&date=&start_time=&end_time=
+                                    Returns ALL resources (no status filter)
+                                    Adds is_available flag based on conflicts
+GET    /:id                       — resource detail + features + manager name
+GET    /:id/availability          — ?date=YYYY-MM-DD → { busy_slots, free_slots }
+GET    /categories                — list all resource categories
+
+### BOOKINGS ROUTES /api/bookings  (authenticated users)
+POST   /                          — calls create_booking() stored procedure
+                                    Body: { resource_id, date, start_time, end_time, purpose }
+                                    Returns 201 { booking_id, status } or 409 { message, alternatives }
+GET    /                          — my bookings only, filter by status/date
+GET    /:id                       — booking detail + approval trail
+PATCH  /:id/cancel                — cancel if is_active and >= 1 day before start
+
+### APPROVALS ROUTES /api/approvals
+GET    /pending                   — combined pending for current user's role
+
+### ANALYTICS ROUTES /api/analytics
+GET    /utilization               — from mv_resource_utilization, scoped by role
+GET    /by-department             — ?from=&to=  (admin only)
+GET    /busiest-resources         — ?days=30    (admin + rm scoped)
+GET    /approval-stats            — turnaround times, rejection rates
+GET    /conflict-report           — conflict counts, cancellation rates
+GET    /export/csv                — generates CSV, role-scoped
+
+### NOTIFICATIONS ROUTES /api/notifications
+GET    /                          — my notifications, last 50
+PATCH  /:id/read                  — mark as read
+GET    /unread-count              — returns { count } for badge
+
+----------------------------------------------------------------------
+FRONTEND — REACT + TAILWIND
+----------------------------------------------------------------------
+
+## Tailwind Config
+Primary color: navy #1F3A8C
+Use these custom colors in tailwind.config.js:
+  navy: { DEFAULT: '#1F3A8C', light: '#2E4A9C', dark: '#152966' }
+  status: {
+    active: '#22c55e',    (green)
+    inactive: '#94a3b8',  (gray)
+    maintenance: '#f59e0b' (amber)
+  }
+
+## Auth Context (src/context/AuthContext.jsx)
+- Firebase onAuthStateChanged listener
+- On login: call POST /api/auth/register to get DB user
+- Store: { firebaseUser, dbUser, role, loading }
+- Expose: login(), logout(), isAdmin(), isHOD(), isRM()
+
+## Protected Route (src/components/ProtectedRoute.jsx)
+- Checks auth + role
+- Redirects to /login if not authenticated
+- Redirects to /unauthorized if wrong role
+- Shows loading spinner during auth check
+
+## App Router (src/App.jsx)
+Use React Router v6 with role-based routing:
+
+/login                → LoginPage (public)
+/register             → RegisterPage (public)
+/pending              → PendingActivationPage (authenticated but inactive)
+/unauthorized         → UnauthorizedPage
+
+/admin/*              → AdminLayout (role: admin)
+  /admin/dashboard
+  /admin/users
+  /admin/departments
+  /admin/resources
+  /admin/bookings
+  /admin/audit-log
+  /admin/blackout
+  /admin/analytics
+  /admin/config
+
+/hod/*                → HODLayout (role: hod)
+  /hod/dashboard
+  /hod/users
+  /hod/approvals
+  /hod/bookings
+  /hod/analytics
+
+/rm/*                 → RMLayout (role: resource_manager)
+  /rm/dashboard
+  /rm/resources
+  /rm/approvals
+  /rm/bookings
+  /rm/analytics
+
+/staff/*              → StaffLayout (role: staff | faculty)
+  /staff/dashboard
+  /staff/search
+  /staff/book
+  /staff/bookings
+  /staff/notifications
+
+/student/*            → StudentLayout (role: student)
+  (same pages as staff)
+
+----------------------------------------------------------------------
+PAGE-BY-PAGE IMPLEMENTATION
+----------------------------------------------------------------------
+
+## LOGIN PAGE (/login)
+- Email + password form
+- Firebase signInWithEmailAndPassword
+- On success: GET /api/auth/me → redirect based on role
+- If is_active=false → redirect to /pending
+- Show error toast on failure
+- "Don't have account?" link to /register
+
+## REGISTER PAGE (/register)
+- Fields: First Name, Last Name, Email, Password (min 8 chars)
+- Firebase createUserWithEmailAndPassword
+- Call POST /api/auth/register
+- Redirect to /pending with message "Account created. Awaiting activation."
+
+## PENDING ACTIVATION PAGE
+- "Your account is pending activation by your HOD or Admin."
+- Show user's email
+- Logout button
+
+----------------------------------------------------------------------
+ADMIN PAGES
+----------------------------------------------------------------------
+
+## Admin Dashboard (/admin/dashboard)
+Stats cards (Tailwind grid 4 cols):
+  - Total Users | Total Resources | Bookings Today | Pending Approvals
+Activity feed: last 20 audit log entries
+Alert panel: bookings with conflicts
+Top 5 busiest resources this week (bar chart - Recharts)
+
+## Admin Users (/admin/users)
+Table columns: Name | Email | Role | Department | Status | Actions
+- Search bar (by name/email)
+- Filter dropdowns: Role, Department, Status
+- Row actions: Edit Role (modal with role dropdown + dept dropdown) | Activate/Deactivate
+- Edit Role modal fields: Role select, Department select, is_active toggle
+- Changing role auto-sets priority_level:
+  admin=1, hod=2, resource_manager=2, staff=3, faculty=3, student=4
+
+## Admin Departments (/admin/departments)
+Table: Dept Name | Building | HOD Name | User Count | Actions
+- Create dept modal: name, building, email, HOD (select from users with role=hod)
+- Edit dept modal (same fields)
+
+## Admin Resources (/admin/resources)
+Table: Name | Category | Location | Capacity | Status | Manager | Actions
+- Filter by category, status, department
+- Edit any resource
+- Status badge with color (active=green, inactive=gray, maintenance=amber)
+- Create blackout button
+
+## Admin All Bookings (/admin/bookings)
+Table: Booking ID | User | Resource | Date | Time | Status | Priority | Actions
+- Filter by user/resource/dept/status/date range
+- Cancel booking button (with confirmation modal)
+- Manual reassign button (select alternative resource same category)
+- Export CSV button
+- Priority column sortable (1=highest shown first)
+
+## Admin Audit Log (/admin/audit-log)
+Table: Time | Table | Operation | Changed By | Old Data | New Data
+- Filter by table_name, operation (INSERT/UPDATE/DELETE), user, date range
+- Click row to expand JSON diff view (show old vs new side by side)
+- Export CSV
+
+## Admin Analytics (/admin/analytics)
+Tabs: Utilization | Departments | Resources | Approvals | Conflicts | Audit
+
+Utilization tab:
+  - Bar chart: bookings per resource per week (last 8 weeks)
+  - Occupancy % cards per resource
+  - Peak hours heatmap (day vs hour) using Recharts
+  - No-show rate table
+
+Departments tab:
+  - Bar chart: total bookings per department
+  - Date range picker (from/to)
+  - Export CSV
+
+Resources tab:
+  - Top 10 busiest (horizontal bar chart)
+  - Bottom 5 least used
+  - Filter by category
+
+Approvals tab:
+  - Avg step-1 turnaround (hours)
+  - Avg step-2 turnaround (hours)
+  - Rejection rate per RM (table)
+  - SLA breach count
+
+Conflicts tab:
+  - Conflict count per resource per month
+  - Cancellation rate by role (pie chart)
+
+Audit tab:
+  - Changes by table (pie chart)
+  - Most active users (table)
+  - Role change history
+
+----------------------------------------------------------------------
+HOD PAGES
+----------------------------------------------------------------------
+
+## HOD Dashboard (/hod/dashboard)
+Stats: Dept Users | Dept Resources | Pending Approvals (step-2) | Today's Dept Bookings
+Pending approvals list (quick action — approve/reject inline)
+Dept bookings this week (calendar or list)
+
+## HOD Users (/hod/users)
+Table: Name | Email | Role | Status | Actions
+- Shows ONLY users in own department
+- Pending users section at top (is_active=false) with Activate button
+- Activate modal: assign role (staff/faculty/resource_manager only), confirm
+- Edit role (same restrictions — cannot assign hod or admin)
+
+## HOD Approvals (/hod/approvals)
+Table: Booking ID | Requester | Resource | Date | Time | Purpose | Priority | Step-1 By | Actions
+- Only step-2 pending approvals for resources in own department
+- Approve button → confirmation → booking = Approved, user notified
+- Reject button → modal requiring remarks text area → booking = Rejected
+- SLA badge: shows hours overdue if past 24h
+- Decision recorded in approval table (step_number=2)
+
+## HOD Bookings (/hod/bookings)
+Same as admin bookings but scoped to own department only
+Export CSV scoped to department
+
+## HOD Analytics (/hod/analytics)
+Same panels as admin analytics but all data scoped to own department
+
+----------------------------------------------------------------------
+RESOURCE MANAGER PAGES
+----------------------------------------------------------------------
+
+## RM Dashboard (/rm/dashboard)
+Stats: My Resources | Pending Approvals | Today's Bookings on My Resources
+Pending approvals list (quick inline action)
+My resources status breakdown (active/inactive/maintenance pie chart)
+
+## RM Resources (/rm/resources)
+Table: Name | Category | Capacity | Location | Status | Features | Actions
+- Shows only resources where manager_id = me
+- Create Resource button → modal:
+    Name, Category (select), Capacity (number), Location, Status, Features (tag input for JSONB: e.g. has_projector, has_whiteboard, has_ac)
+- Edit resource button
+- Status toggle (active/inactive/maintenance) with confirmation
+- Unavailability windows: expandable row showing recurring maintenance windows
+    Add window: day of week select, start time, end time, label
+
+## RM Approvals (/rm/approvals)
+Same structure as HOD approvals but:
+- Shows step-1 pending approvals for my resources only
+- On Approve:
+    If approval_steps=1 → booking becomes Approved → user notified
+    If approval_steps=2 → stays Pending → HOD notified for step-2
+    Create approval row: step_number=1, decision=Approved, approver_id=me
+- On Reject:
+    Booking = Rejected regardless of approval_steps
+    Remarks required
+
+## RM Analytics (/rm/analytics)
+Same panels but scoped to own resources only
+
+----------------------------------------------------------------------
+STAFF / FACULTY PAGES (Student has same UI, different backend limits)
+----------------------------------------------------------------------
+
+## Staff Dashboard (/staff/dashboard)
+Upcoming bookings next 7 days (card list)
+Status summary: Pending | Approved | Cancelled (count badges)
+Notification preview (last 3 unread)
+Quick "Book a Resource" CTA button
+
+## Search Resources (/staff/search)
+Filter bar: Category | Min Capacity | Date | Start Time | End Time | Features (checkboxes)
+Resource cards grid:
+  - Each card: Resource name, category badge, capacity, location, features tags
+  - Status overlay: active=normal, inactive=greyed out + "Unavailable" badge, maintenance=greyed out + "Under Maintenance" badge
+  - Booking button: enabled only if status=active
+  - Click card → resource detail modal with availability calendar
+
+## Book a Resource — 3-Step Wizard (/staff/book)
+Uses URL params or state from search page: ?resource_id=
+
+Step 1 — Select Details:
+  Resource info summary card
+  Date picker (min=today, max=today+advance_days)
+  Start time picker
+  End time picker (must be after start)
+  Purpose textarea
+  "Check Availability" button
+
+Step 2 — Review:
+  Conflict check result:
+    GREEN: "Available — no conflicts" → show booking summary
+    RED: "Conflict detected" → show 3 alternative slots (clickable to auto-fill step 1)
+  Show if approval is needed (approval_steps badge)
+  Show estimated confirmation time
+
+Step 3 — Confirm:
+  Final booking summary
+  Confirm button → POST /api/bookings
+  On success: "Booking created!" toast + redirect to My Bookings
+  On conflict (409): back to step 2 with conflict alert
+
+## My Bookings (/staff/bookings)
+Table/cards: Resource | Date | Time | Status badge | Priority | Actions
+Filter: Status | Date range
+Status badges: Pending=yellow, Approved=green, Rejected=red, Cancelled=gray, Completed=blue
+Approval trail: expandable row showing step-1 and step-2 status + approver names
+Cancel button: shown only if status=Pending or Approved AND date >= tomorrow
+  Confirmation modal before cancel
+Recurring bookings: "Part of recurring series" badge + option to cancel just this or all future
+
+## Notifications (/staff/notifications)
+List: message text | time | read indicator
+Mark individual as read / Mark all as read
+Types with icons: ✓ Confirmed | ⏳ Pending | ✓✓ Approved | ✗ Rejected | ⚠ Reminder | ✗ Cancelled
+
+----------------------------------------------------------------------
+SHARED COMPONENTS
+----------------------------------------------------------------------
+
+## Navbar
+Logo + system name left
+Nav links (role-specific, from config object)
+Notification bell icon with unread count badge
+User avatar + name + role badge
+Logout button
+
+## Sidebar (for admin/hod/rm layouts)
+Icon + label nav items
+Active state highlight
+Collapse to icons on small screens
+
+## Status Badge Component
+Props: status ('active'|'inactive'|'maintenance'|'Pending'|'Approved'|'Rejected'|'Cancelled'|'Completed')
+Color map:
+  active/Approved/Completed = green
+  inactive/Cancelled = gray
+  maintenance/Pending = amber
+  Rejected = red
+
+## Priority Badge Component
+Props: priority_level (1-4)
+Display: 1=Admin (red), 2=Manager (purple), 3=Staff (blue), 4=Student (gray)
+
+## Booking Status Timeline
+Shows step-1 and step-2 approval progress as visual timeline
+States: Waiting | Approved | Rejected per step
+
+## Conflict Alert Component
+Shows on booking conflict (409 response)
+Displays original request that conflicted
+Lists 3 alternative slots as clickable cards
+"Try this slot" button auto-fills booking wizard
+
+## Confirmation Modal
+Reusable modal: title, message, Confirm (red/navy) + Cancel buttons
+Used for: cancel booking, role change, deactivate user, approve/reject
+
+----------------------------------------------------------------------
+AUTH FLOW (complete step-by-step)
+----------------------------------------------------------------------
+
+1. User visits /register
+2. Firebase createUserWithEmailAndPassword creates Firebase account
+3. Frontend calls POST /api/auth/register with Firebase JWT
+4. Backend:
+   a. Verifies JWT with Firebase Admin SDK
+   b. Creates users row: firebase_uid, email, first_name, last_name,
+      role='student', is_active=false, priority_level=4
+   c. Returns { user_id, role, is_active: false }
+5. Frontend redirects to /pending page
+
+6. Admin or HOD logs in (pre-seeded admin account)
+7. Admin/HOD activates user + assigns role in user management panel
+8. Backend PATCH /api/admin/users/:id/role:
+   a. Updates role, is_active=true, priority_level (based on role)
+   b. Sends notification to user
+9. User logs in again → now active
+
+10. User logs in via /login
+11. Firebase signInWithEmailAndPassword
+12. Frontend calls GET /api/auth/me with JWT
+13. Backend verifyToken middleware:
+    a. Verifies Firebase JWT
+    b. Queries users table by firebase_uid
+    c. Checks is_active — if false, returns 403
+    d. Attaches req.user to request
+14. Returns { user_id, role, first_name, last_name, department_id, ... }
+15. Frontend AuthContext stores user
+16. React Router redirects to role-based dashboard:
+    admin → /admin/dashboard
+    hod → /hod/dashboard
+    resource_manager → /rm/dashboard
+    staff/faculty → /staff/dashboard
+    student → /student/dashboard
+
+17. Every subsequent API call:
+    - Axios interceptor adds Authorization: Bearer {firebaseToken} header
+    - Firebase refreshes token automatically before expiry
+    - Backend verifyToken runs on every protected route
+    - checkRole middleware enforces role on sensitive routes
+
+18. Logout:
+    - Firebase signOut()
+    - Clear AuthContext
+    - Redirect to /login
+
+----------------------------------------------------------------------
+SEED DATA (insert on first run)
+----------------------------------------------------------------------
+-- Admin user (create via Firebase first, then insert)
+-- INSERT INTO users(firebase_uid, first_name, last_name, email, role, is_active, priority_level)
+-- VALUES('YOUR_FIREBASE_UID', 'System', 'Admin', 'admin@nitc.ac.in', 'admin', true, 1);
+
+-- Sample departments
+INSERT INTO department(dept_name, building, email) VALUES
+  ('Computer Science and Engineering', 'LHC Block', 'cse@nitc.ac.in'),
+  ('Electronics and Communication', 'ECE Block', 'ece@nitc.ac.in'),
+  ('Mechanical Engineering', 'Mech Block', 'mech@nitc.ac.in')
+ON CONFLICT DO NOTHING;
+
+-- Sample categories
+INSERT INTO resource_category(category_name, advance_days, approval_steps) VALUES
+  ('Classroom',       90, 0),   -- auto-approve
+  ('Laboratory',      60, 1),   -- RM approval only
+  ('Seminar Hall',    90, 2),   -- RM then HOD
+  ('Meeting Room',    30, 1),   -- RM approval only
+  ('Equipment',       30, 1)    -- RM approval only
+ON CONFLICT DO NOTHING;
+
+----------------------------------------------------------------------
+UI / UX REQUIREMENTS
+----------------------------------------------------------------------
+- Use Tailwind CSS v3 throughout — no inline styles
+- Responsive: mobile (1 col) → tablet (2 col) → desktop (3-4 col)
+- Primary navy color: #1F3A8C
+- Toast notifications (react-hot-toast or sonner) for all actions
+- Loading skeletons on all data fetches
+- Empty states with icon + message when no data
+- Confirm before all destructive actions
+- Form validation with React Hook Form + Zod
+- Pagination on all tables (10 rows per page)
+- Date format: DD/MM/YYYY consistently
+- Time format: 12-hour (9:00 AM / 2:30 PM)
+- All tables have search + filter + sort on key columns
+
+----------------------------------------------------------------------
+ERROR HANDLING
+----------------------------------------------------------------------
+Backend:
+- All routes wrapped in try/catch
+- Consistent error format: { error: 'message', code: 'ERROR_CODE' }
+- HTTP status codes: 400 validation, 401 auth, 403 forbidden, 404 not found, 409 conflict, 500 server
+
+Frontend:
+- Axios interceptor catches 401 → redirect to login
+- Axios interceptor catches 403 → show "Access denied" toast
+- 409 conflict → show ConflictAlert component with alternatives
+- 500 → generic error toast + log to console
+- Network error → "Cannot connect to server" toast
+
+----------------------------------------------------------------------
+PACKAGE.JSON DEPENDENCIES
+----------------------------------------------------------------------
+Backend (server/):
+  express, pg, firebase-admin, cors, dotenv,
+  express-rate-limit, helmet, morgan
+
+Frontend (client/):
+  react, react-dom, react-router-dom,
+  @vitejs/plugin-react, vite,
+  tailwindcss, postcss, autoprefixer,
+  axios, firebase,
+  react-hook-form, zod, @hookform/resolvers,
+  recharts, lucide-react,
+  react-hot-toast, date-fns,
+  @tanstack/react-table
+
+----------------------------------------------------------------------
+REPLIT-SPECIFIC SETUP
+----------------------------------------------------------------------
+1. Create a Repl → Node.js template
+2. Add PostgreSQL database from Replit's database tab
+3. Set all environment variables in Replit Secrets
+4. Run schema.sql on first startup (auto-detect with a migration flag)
+5. Serve frontend build from Express in production:
+   app.use(express.static(path.join(__dirname, '../client/dist')));
+   app.get('*', (req, res) =>
+     res.sendFile(path.join(__dirname, '../client/dist/index.html')));
+6. package.json root scripts:
+   "dev": "concurrently \"cd server && node index.js\" \"cd client && vite\"",
+   "build": "cd client && vite build",
+   "start": "node server/index.js"
+
+----------------------------------------------------------------------
+WHAT TO BUILD FIRST (recommended order)
+----------------------------------------------------------------------
+1. Database schema (schema.sql) + seed data
+2. Express server + DB pool + Firebase Admin init
+3. verifyToken + checkRole middleware
+4. Auth routes (register + me)
+5. Vite + React setup + Tailwind config
+6. AuthContext + Firebase client init
+7. Login + Register + Pending pages
+8. Protected route + role-based routing
+9. Staff Search + Book (3-step wizard) + My Bookings
+10. Admin User Management + Role Assignment
+11. HOD Approval flow
+12. RM Resource Management + Step-1 Approvals
+13. Notifications
+14. Analytics pages
+15. Audit log viewer
+
+======================================================================
+END OF PROMPT
+======================================================================
