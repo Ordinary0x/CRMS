@@ -1,24 +1,4 @@
 {
-<<<<<<< HEAD
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "CRMBS backend",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "node src/server.js",
-    "test": "echo \"No tests configured yet\""
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "cores": "^0.8.0",
-    "cors": "^2.8.6",
-    "dotenv": "^16.6.1",
-    "express": "^5.2.1",
-    "pg": "^8.20.0"
-=======
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
@@ -32,6 +12,5 @@
   "devDependencies": {
     "typescript": "~5.9.2",
     "prettier": "^3.8.1"
->>>>>>> 4d26b95 (Initial commit)
   }
 }
