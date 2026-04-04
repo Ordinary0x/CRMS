@@ -10,6 +10,7 @@ out-tsc
 
 # dependencies
 node_modules
+**/node_modules/
 
 # IDEs and editors
 /.idea
@@ -36,6 +37,13 @@ npm-debug.log
 yarn-error.log
 testem.log
 /typings
+*.log
+
+# local runtime files
+backend/server.log
+frontend/client.log
+db/postgres.log
+db/.s.PGSQL.*
 
 # System Files
 .DS_Store
