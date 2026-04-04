@@ -8,7 +8,7 @@ out-tsc
 .expo
 .expo-shared
 
-
+zipFile.zip
 # dependencies
 /home/sharad/IMP/Campus-Resource-Managerzip/artifacts/crmbs/node_modules
 node_modules
