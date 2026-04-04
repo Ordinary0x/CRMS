@@ -8,7 +8,9 @@ out-tsc
 .expo
 .expo-shared
 
+
 # dependencies
+/home/sharad/IMP/Campus-Resource-Managerzip/artifacts/crmbs/node_modules
 node_modules
 **/node_modules/
 backend/server/node_modules/
