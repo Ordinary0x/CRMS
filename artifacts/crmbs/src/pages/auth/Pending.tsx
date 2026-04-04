@@ -13,7 +13,7 @@ export default function Pending() {
     if (!token) {
       setLocation("/login");
     } else if (dbUser?.is_active) {
-      const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role === 'resource_manager' ? 'rm' : dbUser.role;
+      const rolePrefix = dbUser.role === 'resource_manager' ? 'rm' : dbUser.role === 'faculty' ? 'staff' : dbUser.role;
       setLocation(`/${rolePrefix}/dashboard`);
     }
   }, [token, dbUser, setLocation]);

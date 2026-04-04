@@ -153,6 +153,15 @@ router.post("/rm/resources/:id/unavailability", ...rmAuth, async (req, res): Pro
   }
   const client = await pool.connect();
   try {
+    const check = await client.query(
+      "SELECT manager_id FROM resource WHERE resource_id = $1",
+      [id]
+    );
+    if (!check.rows[0] || check.rows[0].manager_id !== req.user!.user_id) {
+      res.status(403).json({ error: "You don't manage this resource" });
+      return;
+    }
+
     const result = await client.query(
       `INSERT INTO resource_unavailability(resource_id, day_of_week, start_time, end_time, label)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -166,11 +175,22 @@ router.post("/rm/resources/:id/unavailability", ...rmAuth, async (req, res): Pro
 
 // DELETE /rm/resources/:id/unavailability/:uid
 router.delete("/rm/resources/:id/unavailability/:uid", ...rmAuth, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
   const rawUid = Array.isArray(req.params.uid) ? req.params.uid[0] : req.params.uid;
   const uid = parseInt(rawUid, 10);
   const client = await pool.connect();
   try {
-    await client.query("DELETE FROM resource_unavailability WHERE unavail_id = $1", [uid]);
+    const check = await client.query(
+      "SELECT manager_id FROM resource WHERE resource_id = $1",
+      [id]
+    );
+    if (!check.rows[0] || check.rows[0].manager_id !== req.user!.user_id) {
+      res.status(403).json({ error: "You don't manage this resource" });
+      return;
+    }
+
+    await client.query("DELETE FROM resource_unavailability WHERE unavail_id = $1 AND resource_id = $2", [uid, id]);
     res.json({ message: "Unavailability window deleted" });
   } finally {
     client.release();
@@ -210,12 +230,14 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(rawId, 10);
   const { decision, remarks } = req.body;
+  const normalizedDecision = typeof decision === "string" ? decision.toLowerCase() : "";
+  const decisionValue = normalizedDecision === "approved" ? "Approved" : normalizedDecision === "rejected" ? "Rejected" : null;
 
-  if (!decision || !["Approved", "Rejected"].includes(decision)) {
+  if (!decisionValue) {
     res.status(400).json({ error: "decision must be Approved or Rejected" });
     return;
   }
-  if (decision === "Rejected" && !remarks) {
+  if (decisionValue === "Rejected" && !remarks) {
     res.status(400).json({ error: "Remarks are required for rejection" });
     return;
   }
@@ -228,8 +250,11 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
        JOIN booking b ON b.booking_id = a.booking_id
        JOIN resource r ON r.resource_id = b.resource_id
        JOIN resource_category rc ON rc.category_id = r.category_id
-       WHERE a.approval_id = $1`,
-      [id]
+       WHERE a.approval_id = $1
+         AND a.step_number = 1
+         AND a.decision IS NULL
+         AND r.manager_id = $2`,
+       [id, req.user!.user_id]
     );
     if (!approvalResult.rows[0]) {
       res.status(404).json({ error: "Approval not found" });
@@ -240,10 +265,10 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
     await client.query(
       `UPDATE approval SET decision = $1, remarks = $2, approver_id = $3, approval_time = now()
        WHERE approval_id = $4`,
-      [decision, remarks ?? null, req.user!.user_id, id]
+      [decisionValue, remarks ?? null, req.user!.user_id, id]
     );
 
-    if (decision === "Rejected") {
+    if (decisionValue === "Rejected") {
       const statusResult = await client.query(
         "SELECT status_id FROM booking_status WHERE status_name = 'Rejected'"
       );
@@ -258,7 +283,7 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
     } else if (approval.approval_steps >= 2) {
       // Needs HOD approval — create step 2 approval record
       await client.query(
-        "INSERT INTO approval(booking_id, step_number) VALUES ($1, 2)",
+        "INSERT INTO approval(booking_id, step_number) SELECT $1, 2 WHERE NOT EXISTS (SELECT 1 FROM approval WHERE booking_id = $1 AND step_number = 2)",
         [approval.booking_id]
       );
       await client.query(
@@ -280,7 +305,7 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
       );
     }
 
-    res.json({ message: `Booking ${decision === "Approved" ? "approved" : "rejected"}` });
+    res.json({ message: `Booking ${decisionValue === "Approved" ? "approved" : "rejected"}` });
   } finally {
     client.release();
   }

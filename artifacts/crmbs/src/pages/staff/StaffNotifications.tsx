@@ -11,8 +11,27 @@ export default function StaffNotifications() {
   const { data: notifications, isLoading } = useListNotifications({
     query: { queryKey: getListNotificationsQueryKey() }
   });
+  const items = notifications || [];
 
   const markRead = useMarkNotificationRead();
+
+  const handleMarkAllRead = () => {
+    const unread = items.filter((item) => !item.read_at);
+    if (unread.length === 0) {
+      toast.info("No unread notifications");
+      return;
+    }
+
+    Promise.all(unread.map((item) => markRead.mutateAsync({ id: item.notification_id })))
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetUnreadNotificationCountQueryKey() });
+        toast.success("All marked as read");
+      })
+      .catch(() => {
+        toast.error("Failed to mark all as read");
+      });
+  };
 
   const handleMarkRead = (id: number) => {
     markRead.mutate({ id }, {
@@ -27,7 +46,7 @@ export default function StaffNotifications() {
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold tracking-tight text-primary">Notifications</h2>
-        <Button variant="outline" size="sm" onClick={() => toast.success("All marked as read")}>
+        <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
           <CheckCircle2 className="w-4 h-4 mr-2" /> Mark all read
         </Button>
       </div>
@@ -36,13 +55,13 @@ export default function StaffNotifications() {
         <CardContent className="p-0 divide-y">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Loading notifications...</div>
-          ) : notifications?.data && notifications.data.length > 0 ? (
-            notifications.data.map(notification => (
+          ) : items.length > 0 ? (
+            items.map(notification => (
               <div 
                 key={notification.notification_id} 
-                className={`p-6 flex gap-4 transition-colors ${notification.status === 'unread' ? 'bg-primary/5' : ''}`}
+                className={`p-6 flex gap-4 transition-colors ${!notification.read_at ? 'bg-primary/5' : ''}`}
               >
-                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${notification.status === 'unread' ? 'bg-primary' : 'bg-transparent'}`} />
+                <div className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${!notification.read_at ? 'bg-primary' : 'bg-transparent'}`} />
                 <div className="flex-1">
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">
@@ -52,10 +71,10 @@ export default function StaffNotifications() {
                       {format(new Date(notification.created_at), 'MMM d, yyyy • h:mm a')}
                     </span>
                   </div>
-                  <p className={`text-base ${notification.status === 'unread' ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
+                  <p className={`text-base ${!notification.read_at ? 'font-medium text-foreground' : 'text-muted-foreground'}`}>
                     {notification.message}
                   </p>
-                  {notification.status === 'unread' && (
+                  {!notification.read_at && (
                     <Button variant="link" size="sm" className="px-0 h-auto mt-2 text-primary" onClick={() => handleMarkRead(notification.notification_id)}>
                       Mark as read
                     </Button>

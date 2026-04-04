@@ -136,7 +136,7 @@ router.get("/bookings", verifyToken, async (req, res): Promise<void> => {
     const params: unknown[] = [req.user!.user_id];
     let idx = 2;
 
-    if (status) { conditions.push(`bs.status_name = $${idx++}`); params.push(status); }
+    if (status) { conditions.push(`LOWER(bs.status_name) = LOWER($${idx++})`); params.push(status); }
     if (from_date) { conditions.push(`b.date >= $${idx++}`); params.push(from_date); }
     if (to_date) { conditions.push(`b.date <= $${idx++}`); params.push(to_date); }
 
@@ -158,8 +158,8 @@ router.get("/bookings/:id", verifyToken, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `${BOOKING_QUERY} WHERE b.booking_id = $1`,
-      [id]
+      `${BOOKING_QUERY} WHERE b.booking_id = $1 AND b.user_id = $2`,
+      [id, req.user!.user_id]
     );
     if (!result.rows[0]) {
       res.status(404).json({ error: "Booking not found" });
@@ -196,8 +196,10 @@ router.patch("/bookings/:id/cancel", verifyToken, async (req, res): Promise<void
     }
 
     const tomorrow = new Date();
+    tomorrow.setHours(0, 0, 0, 0);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const bookingDate = new Date(b.date);
+    bookingDate.setHours(0, 0, 0, 0);
     if (bookingDate < tomorrow) {
       res.status(400).json({ error: "Cannot cancel a booking less than 1 day before start" });
       return;

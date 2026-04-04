@@ -10,6 +10,12 @@ const ALLOWED_HOD_ROLES = ["staff", "faculty", "resource_manager"];
 
 // GET /hod/users
 router.get("/hod/users", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -18,7 +24,7 @@ router.get("/hod/users", ...hodAuth, async (req, res): Promise<void> => {
        LEFT JOIN department d ON d.department_id = u.department_id
        WHERE u.department_id = $1
        ORDER BY u.is_active ASC, u.created_at DESC`,
-      [req.user!.department_id]
+      [deptId]
     );
     res.json(result.rows);
   } finally {
@@ -28,6 +34,12 @@ router.get("/hod/users", ...hodAuth, async (req, res): Promise<void> => {
 
 // PATCH /hod/users/:id/activate
 router.patch("/hod/users/:id/activate", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(rawId, 10);
   const { role } = req.body;
@@ -49,7 +61,7 @@ router.patch("/hod/users/:id/activate", ...hodAuth, async (req, res): Promise<vo
       "SELECT department_id FROM users WHERE user_id = $1",
       [id]
     );
-    if (!userCheck.rows[0] || userCheck.rows[0].department_id !== req.user!.department_id) {
+    if (!userCheck.rows[0] || userCheck.rows[0].department_id !== deptId) {
       res.status(403).json({ error: "User not in your department" });
       return;
     }
@@ -79,6 +91,12 @@ router.patch("/hod/users/:id/activate", ...hodAuth, async (req, res): Promise<vo
 
 // GET /hod/approvals/pending
 router.get("/hod/approvals/pending", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -94,12 +112,11 @@ router.get("/hod/approvals/pending", ...hodAuth, async (req, res): Promise<void>
        JOIN resource r ON r.resource_id = b.resource_id
        JOIN resource_category rc ON rc.category_id = r.category_id
        JOIN users u ON u.user_id = b.user_id
-       JOIN department d ON d.department_id = u.department_id
        WHERE a.step_number = 2
-         AND a.decision IS NULL
-         AND (r.department_id = $1 OR d.department_id = $1)
-       ORDER BY b.created_at ASC`,
-      [req.user!.department_id]
+          AND a.decision IS NULL
+          AND r.department_id = $1
+        ORDER BY b.created_at ASC`,
+      [deptId]
     );
     res.json(result.rows);
   } finally {
@@ -109,15 +126,23 @@ router.get("/hod/approvals/pending", ...hodAuth, async (req, res): Promise<void>
 
 // POST /hod/approvals/:id/decide
 router.post("/hod/approvals/:id/decide", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(rawId, 10);
   const { decision, remarks } = req.body;
+  const normalizedDecision = typeof decision === "string" ? decision.toLowerCase() : "";
+  const decisionValue = normalizedDecision === "approved" ? "Approved" : normalizedDecision === "rejected" ? "Rejected" : null;
 
-  if (!decision || !["Approved", "Rejected"].includes(decision)) {
+  if (!decisionValue) {
     res.status(400).json({ error: "decision must be Approved or Rejected" });
     return;
   }
-  if (decision === "Rejected" && !remarks) {
+  if (decisionValue === "Rejected" && !remarks) {
     res.status(400).json({ error: "Remarks are required for rejection" });
     return;
   }
@@ -125,8 +150,15 @@ router.post("/hod/approvals/:id/decide", ...hodAuth, async (req, res): Promise<v
   const client = await pool.connect();
   try {
     const approvalResult = await client.query(
-      "SELECT a.*, b.user_id FROM approval a JOIN booking b ON b.booking_id = a.booking_id WHERE a.approval_id = $1",
-      [id]
+      `SELECT a.*, b.user_id
+       FROM approval a
+       JOIN booking b ON b.booking_id = a.booking_id
+       JOIN resource r ON r.resource_id = b.resource_id
+       WHERE a.approval_id = $1
+         AND a.step_number = 2
+         AND a.decision IS NULL
+         AND r.department_id = $2`,
+      [id, deptId]
     );
     if (!approvalResult.rows[0]) {
       res.status(404).json({ error: "Approval not found" });
@@ -137,11 +169,11 @@ router.post("/hod/approvals/:id/decide", ...hodAuth, async (req, res): Promise<v
     await client.query(
       `UPDATE approval SET decision = $1, remarks = $2, approver_id = $3, approval_time = now()
        WHERE approval_id = $4`,
-      [decision, remarks ?? null, req.user!.user_id, id]
+      [decisionValue, remarks ?? null, req.user!.user_id, id]
     );
 
     // Update booking status
-    const newStatus = decision === "Approved" ? "Approved" : "Rejected";
+    const newStatus = decisionValue === "Approved" ? "Approved" : "Rejected";
     const statusResult = await client.query(
       "SELECT status_id FROM booking_status WHERE status_name = $1",
       [newStatus]
@@ -165,6 +197,12 @@ router.post("/hod/approvals/:id/decide", ...hodAuth, async (req, res): Promise<v
 
 // GET /hod/bookings
 router.get("/hod/bookings", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -187,7 +225,7 @@ router.get("/hod/bookings", ...hodAuth, async (req, res): Promise<void> => {
        JOIN users u ON u.user_id = b.user_id
        WHERE u.department_id = $1
        ORDER BY b.created_at DESC`,
-      [req.user!.department_id]
+      [deptId]
     );
     res.json(result.rows);
   } finally {
@@ -197,6 +235,12 @@ router.get("/hod/bookings", ...hodAuth, async (req, res): Promise<void> => {
 
 // GET /hod/analytics
 router.get("/hod/analytics", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const stats = await client.query(
@@ -210,7 +254,7 @@ router.get("/hod/analytics", ...hodAuth, async (req, res): Promise<void> => {
        JOIN booking_status bs ON bs.status_id = b.status_id
        JOIN users u ON u.user_id = b.user_id
        WHERE u.department_id = $1`,
-      [req.user!.department_id]
+      [deptId]
     );
 
     const byResource = await client.query(
@@ -224,7 +268,7 @@ router.get("/hod/analytics", ...hodAuth, async (req, res): Promise<void> => {
        WHERE u.department_id = $1
        GROUP BY r.resource_id, r.resource_name, rc.category_name
        ORDER BY total_bookings DESC`,
-      [req.user!.department_id]
+      [deptId]
     );
 
     res.json({ ...stats.rows[0], utilization_by_resource: byResource.rows });
@@ -235,28 +279,33 @@ router.get("/hod/analytics", ...hodAuth, async (req, res): Promise<void> => {
 
 // GET /hod/dashboard
 router.get("/hod/dashboard", ...hodAuth, async (req, res): Promise<void> => {
+  const deptId = req.user!.department_id;
+  if (!deptId) {
+    res.status(400).json({ error: "HOD department is not configured" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const [users, pendingApprovals, bookingsToday, recentApprovals] = await Promise.all([
       client.query(
         "SELECT COUNT(*)::INT as count FROM users WHERE department_id = $1 AND is_active = true",
-        [req.user!.department_id]
+        [deptId]
       ),
       client.query(
         `SELECT COUNT(*)::INT as count FROM approval a
          JOIN booking b ON b.booking_id = a.booking_id
          JOIN booking_status bs ON bs.status_id = b.status_id AND bs.status_name = 'Pending'
          JOIN resource r ON r.resource_id = b.resource_id
-         JOIN users u ON u.user_id = b.user_id
          WHERE a.step_number = 2 AND a.decision IS NULL
-           AND (r.department_id = $1 OR u.department_id = $1)`,
-        [req.user!.department_id]
+           AND r.department_id = $1`,
+        [deptId]
       ),
       client.query(
         `SELECT COUNT(*)::INT as count FROM booking b
          JOIN users u ON u.user_id = b.user_id
          WHERE b.date = CURRENT_DATE AND u.department_id = $1`,
-        [req.user!.department_id]
+        [deptId]
       ),
       client.query(
         `SELECT a.approval_id, b.booking_id, b.date, b.start_time, b.end_time, b.purpose,
@@ -267,9 +316,9 @@ router.get("/hod/dashboard", ...hodAuth, async (req, res): Promise<void> => {
          JOIN resource r ON r.resource_id = b.resource_id
          JOIN users u ON u.user_id = b.user_id
          WHERE a.step_number = 2 AND a.decision IS NULL
-           AND (r.department_id = $1 OR u.department_id = $1)
+           AND r.department_id = $1
          ORDER BY b.created_at ASC LIMIT 5`,
-        [req.user!.department_id]
+        [deptId]
       ),
     ]);
 

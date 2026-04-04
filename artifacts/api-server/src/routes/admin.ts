@@ -77,14 +77,15 @@ router.patch("/admin/users/:id/role", ...adminAuth, async (req, res): Promise<vo
   }
 
   const priority_level = priorityForRole(role);
+  const hasDepartmentId = Object.prototype.hasOwnProperty.call(req.body, "department_id");
   const client = await pool.connect();
   try {
     const result = await client.query(
       `UPDATE users SET role = $1, priority_level = $2, is_active = COALESCE($3, is_active),
-       department_id = $4
-       WHERE user_id = $5
+       department_id = CASE WHEN $4 THEN $5 ELSE department_id END
+       WHERE user_id = $6
        RETURNING *, (SELECT dept_name FROM department WHERE department_id = users.department_id) as department_name`,
-      [role, priority_level, is_active, department_id ?? null, id]
+      [role, priority_level, is_active, hasDepartmentId, department_id ?? null, id]
     );
 
     if (!result.rows[0]) {
@@ -93,9 +94,10 @@ router.patch("/admin/users/:id/role", ...adminAuth, async (req, res): Promise<vo
     }
 
     // Send notification
+    const effectiveIsActive = typeof is_active === "boolean" ? is_active : result.rows[0].is_active;
     await client.query(
       "INSERT INTO notification(user_id, message, channel) VALUES ($1, $2, 'email')",
-      [id, `Your role has been updated to ${role} and account is ${is_active ? "active" : "inactive"}.`]
+      [id, `Your role has been updated to ${role} and account is ${effectiveIsActive ? "active" : "inactive"}.`]
     );
 
     res.json(result.rows[0]);
@@ -308,7 +310,7 @@ router.get("/admin/bookings", ...adminAuth, async (req, res): Promise<void> => {
     const conditions: string[] = [];
     const params: unknown[] = [];
     let idx = 1;
-    if (status) { conditions.push(`bs.status_name = $${idx++}`); params.push(status); }
+    if (status) { conditions.push(`LOWER(bs.status_name) = LOWER($${idx++})`); params.push(status); }
     if (resource_id) { conditions.push(`b.resource_id = $${idx++}`); params.push(Number(resource_id)); }
     if (user_id) { conditions.push(`b.user_id = $${idx++}`); params.push(Number(user_id)); }
     if (from_date) { conditions.push(`b.date >= $${idx++}`); params.push(from_date); }

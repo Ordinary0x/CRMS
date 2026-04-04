@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { setAuthTokenGetter, getMe, UserProfile } from '@workspace/api-client-react';
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 const TOKEN_KEY = "crmbs_token";
 
@@ -22,6 +24,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setToken = (newToken: string | null) => {
     setTokenState(newToken);
+    if (newToken) {
+      setLoading(true);
+    }
     if (newToken) {
       localStorage.setItem(TOKEN_KEY, newToken);
     } else {
@@ -53,17 +58,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const currentToken = localStorage.getItem(TOKEN_KEY);
-    if (currentToken) {
-      fetchUser(currentToken).finally(() => setLoading(false));
-    } else {
+    let active = true;
+
+    if (!token) {
+      setDbUser(null);
       setLoading(false);
+      return () => {
+        active = false;
+      };
     }
-  }, []);
+
+    fetchUser(token).finally(() => {
+      if (active) {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const logout = () => {
-    setToken(null);
-    setDbUser(null);
+    signOut(auth).finally(() => {
+      setToken(null);
+      setDbUser(null);
+    });
   };
 
   return (

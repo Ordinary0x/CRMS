@@ -125,6 +125,7 @@ export async function runMigrations() {
         user_id        INT         NOT NULL REFERENCES users(user_id),
         resource_id    INT         NOT NULL REFERENCES resource(resource_id),
         status_id      INT         NOT NULL REFERENCES booking_status(status_id),
+        is_slot_blocking BOOLEAN   NOT NULL DEFAULT TRUE,
         priority_level SMALLINT    NOT NULL DEFAULT 4,
         recurrence_id  INT         REFERENCES recurrence(recurrence_id),
         date           DATE        NOT NULL,
@@ -133,6 +134,47 @@ export async function runMigrations() {
         purpose        TEXT,
         created_at     TIMESTAMPTZ DEFAULT now(),
         CONSTRAINT chk_time_order CHECK (start_time < end_time)
+      )
+    `);
+
+    await client.query(`
+      ALTER TABLE booking
+      ADD COLUMN IF NOT EXISTS is_slot_blocking BOOLEAN NOT NULL DEFAULT TRUE
+    `);
+
+    await client.query(`
+      CREATE OR REPLACE FUNCTION fn_set_booking_blocking_flag()
+      RETURNS TRIGGER LANGUAGE plpgsql AS $$
+      BEGIN
+        NEW.is_slot_blocking := EXISTS (
+          SELECT 1
+          FROM booking_status bs
+          WHERE bs.status_id = NEW.status_id
+            AND bs.status_name IN ('Pending','Approved')
+        );
+        RETURN NEW;
+      END;
+      $$
+    `);
+
+    await client.query(`
+      DROP TRIGGER IF EXISTS trg_set_booking_blocking_flag ON booking
+    `);
+    await client.query(`
+      CREATE TRIGGER trg_set_booking_blocking_flag
+      BEFORE INSERT OR UPDATE OF status_id
+      ON booking
+      FOR EACH ROW
+      EXECUTE FUNCTION fn_set_booking_blocking_flag()
+    `);
+
+    await client.query(`
+      UPDATE booking b
+      SET is_slot_blocking = EXISTS (
+        SELECT 1
+        FROM booking_status bs
+        WHERE bs.status_id = b.status_id
+          AND bs.status_name IN ('Pending','Approved')
       )
     `);
 
@@ -150,10 +192,7 @@ export async function runMigrations() {
         EXCLUDE USING gist (
           resource_id WITH =,
           tsrange(date + start_time, date + end_time) WITH &&
-        ) WHERE (status_id IN (
-          SELECT status_id FROM booking_status
-          WHERE status_name IN ('Pending','Approved')
-        ))
+        ) WHERE (is_slot_blocking)
       `);
     } catch { /* already exists */ }
 
@@ -428,6 +467,112 @@ export async function runMigrations() {
         ('Meeting Room',  30, 1),
         ('Equipment',     30, 1)
       ON CONFLICT DO NOTHING
+    `);
+
+    // Seed core users with known credentials
+    // Admin password: Admin@123
+    // Others password: Test@123
+    await client.query(`
+      WITH cse AS (
+        SELECT department_id FROM department WHERE dept_name = 'Computer Science and Engineering' LIMIT 1
+      )
+      INSERT INTO users(
+        firebase_uid, first_name, last_name, email, role, is_active,
+        priority_level, department_id, password_hash
+      )
+      VALUES
+        (
+          'seed-admin', 'System', 'Admin', 'admin@nitc.ac.in', 'admin', true,
+          1, (SELECT department_id FROM cse),
+          '$2y$10$o7yda6lHEIzWrb89ak87c.VzkrPBmc1KO9cNWdNuhNvXjMnu7k0AO'
+        ),
+        (
+          'seed-hod-cse', 'CSE', 'HOD', 'hod.cse@nitc.ac.in', 'hod', true,
+          2, (SELECT department_id FROM cse),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-rm-cse', 'CSE', 'Resource Manager', 'rm.cse@nitc.ac.in', 'resource_manager', true,
+          2, (SELECT department_id FROM cse),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-faculty-cse', 'CSE', 'Faculty', 'faculty.cse@nitc.ac.in', 'faculty', true,
+          3, (SELECT department_id FROM cse),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-student', 'NITC', 'Student', 'student@nitc.ac.in', 'student', true,
+          4, (SELECT department_id FROM cse),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        )
+      ON CONFLICT (email) DO UPDATE SET
+        firebase_uid = EXCLUDED.firebase_uid,
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        role = EXCLUDED.role,
+        is_active = EXCLUDED.is_active,
+        priority_level = EXCLUDED.priority_level,
+        department_id = EXCLUDED.department_id,
+        password_hash = EXCLUDED.password_hash
+    `);
+
+    // Ensure CSE HOD is assigned in department table
+    await client.query(`
+      UPDATE department d
+      SET hod_id = u.user_id
+      FROM users u
+      WHERE d.dept_name = 'Computer Science and Engineering'
+        AND u.email = 'hod.cse@nitc.ac.in'
+    `);
+
+    // Seed sample resources for RM flows
+    await client.query(`
+      INSERT INTO resource(
+        resource_name, capacity, location, status, features,
+        category_id, manager_id, department_id
+      )
+      SELECT
+        'CSE Seminar Hall', 180, 'LHC Block - SH1', 'active',
+        '{"projector": true, "ac": true, "audio_system": true}'::jsonb,
+        (SELECT category_id FROM resource_category WHERE category_name = 'Seminar Hall' LIMIT 1),
+        (SELECT user_id FROM users WHERE email = 'rm.cse@nitc.ac.in' LIMIT 1),
+        (SELECT department_id FROM department WHERE dept_name = 'Computer Science and Engineering' LIMIT 1)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM resource WHERE resource_name = 'CSE Seminar Hall'
+      )
+    `);
+
+    await client.query(`
+      INSERT INTO resource(
+        resource_name, capacity, location, status, features,
+        category_id, manager_id, department_id
+      )
+      SELECT
+        'CSE Networking Lab', 60, 'CSE Block - Lab 2', 'active',
+        '{"projector": true, "computers": true, "whiteboard": true}'::jsonb,
+        (SELECT category_id FROM resource_category WHERE category_name = 'Laboratory' LIMIT 1),
+        (SELECT user_id FROM users WHERE email = 'rm.cse@nitc.ac.in' LIMIT 1),
+        (SELECT department_id FROM department WHERE dept_name = 'Computer Science and Engineering' LIMIT 1)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM resource WHERE resource_name = 'CSE Networking Lab'
+      )
+    `);
+
+    await client.query(`
+      INSERT INTO resource(
+        resource_name, capacity, location, status, features,
+        category_id, manager_id, department_id
+      )
+      SELECT
+        'CSE Smart Classroom', 80, 'LHC Block - CR4', 'active',
+        '{"projector": true, "smart_board": true, "ac": true}'::jsonb,
+        (SELECT category_id FROM resource_category WHERE category_name = 'Classroom' LIMIT 1),
+        (SELECT user_id FROM users WHERE email = 'rm.cse@nitc.ac.in' LIMIT 1),
+        (SELECT department_id FROM department WHERE dept_name = 'Computer Science and Engineering' LIMIT 1)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM resource WHERE resource_name = 'CSE Smart Classroom'
+      )
     `);
 
     logger.info("Database migrations completed successfully");

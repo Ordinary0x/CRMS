@@ -25,7 +25,7 @@ router.patch("/notifications/:id/read", verifyToken, async (req, res): Promise<v
   const client = await pool.connect();
   try {
     await client.query(
-      "UPDATE notification SET is_read = true WHERE notif_id = $1 AND user_id = $2",
+      "UPDATE notification SET read_at = COALESCE(read_at, now()) WHERE notification_id = $1 AND user_id = $2",
       [id, req.user!.user_id]
     );
     res.json({ message: "Notification marked as read" });
@@ -39,7 +39,7 @@ router.patch("/notifications/read-all", verifyToken, async (req, res): Promise<v
   const client = await pool.connect();
   try {
     await client.query(
-      "UPDATE notification SET is_read = true WHERE user_id = $1",
+      "UPDATE notification SET read_at = COALESCE(read_at, now()) WHERE user_id = $1",
       [req.user!.user_id]
     );
     res.json({ message: "All notifications marked as read" });
@@ -48,15 +48,29 @@ router.patch("/notifications/read-all", verifyToken, async (req, res): Promise<v
   }
 });
 
-// GET /notifications/count
+// GET /notifications/unread-count
+router.get("/notifications/unread-count", verifyToken, async (req, res): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      "SELECT COUNT(*)::INT as count FROM notification WHERE user_id = $1 AND read_at IS NULL",
+      [req.user!.user_id]
+    );
+    res.json({ count: result.rows[0].count });
+  } finally {
+    client.release();
+  }
+});
+
+// Backward-compatible alias
 router.get("/notifications/count", verifyToken, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      "SELECT COUNT(*)::INT as unread FROM notification WHERE user_id = $1 AND is_read = false",
+      "SELECT COUNT(*)::INT as count FROM notification WHERE user_id = $1 AND read_at IS NULL",
       [req.user!.user_id]
     );
-    res.json({ unread: result.rows[0].unread });
+    res.json({ count: result.rows[0].count });
   } finally {
     client.release();
   }

@@ -72,7 +72,7 @@ const roleNavItems: Record<string, NavItem[]> = {
 function NotificationBell() {
   const { dbUser } = useAuth();
   const queryClient = useQueryClient();
-  const { data: unreadCount, refetch: refetchCount } = useGetUnreadNotificationCount({
+  const { data: unreadCount } = useGetUnreadNotificationCount({
     query: {
       enabled: !!dbUser,
       queryKey: getGetUnreadNotificationCountQueryKey()
@@ -87,6 +87,12 @@ function NotificationBell() {
   });
 
   const markRead = useMarkNotificationRead();
+
+  const notificationsPath = dbUser?.role === "student"
+    ? "/student/notifications"
+    : dbUser?.role === "staff" || dbUser?.role === "faculty"
+      ? "/staff/notifications"
+      : null;
 
   const handleMarkRead = (id: number) => {
     markRead.mutate({ id }, {
@@ -112,18 +118,20 @@ function NotificationBell() {
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between px-4 py-2 border-b">
           <h4 className="font-semibold">Notifications</h4>
-          <Link href={`/${dbUser?.role === 'student' ? 'student' : 'staff'}/notifications`} className="text-xs text-primary hover:underline">
-            View All
-          </Link>
+          {notificationsPath ? (
+            <Link href={notificationsPath} className="text-xs text-primary hover:underline">
+              View All
+            </Link>
+          ) : null}
         </div>
         <ScrollArea className="h-80">
-          {notifications?.data && notifications.data.length > 0 ? (
+          {notifications && notifications.length > 0 ? (
             <div className="flex flex-col">
-              {notifications.data.slice(0, 5).map((n: Notification) => (
+              {notifications.slice(0, 5).map((n: Notification) => (
                 <div 
                   key={n.notification_id} 
-                  className={`p-4 border-b text-sm ${n.status === 'unread' ? 'bg-muted/50' : ''}`}
-                  onClick={() => n.status === 'unread' && handleMarkRead(n.notification_id)}
+                  className={`p-4 border-b text-sm ${!n.read_at ? 'bg-muted/50' : ''}`}
+                  onClick={() => !n.read_at && handleMarkRead(n.notification_id)}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-medium">{n.channel}</span>

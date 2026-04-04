@@ -23,6 +23,7 @@ export default function StaffBookings() {
     {}, // Default params
     { query: { queryKey: getListMyBookingsQueryKey({}) } }
   );
+  const bookings = data || [];
 
   const cancelBooking = useCancelBooking();
 
@@ -60,7 +61,7 @@ export default function StaffBookings() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data?.data.map((booking) => (
+                  {bookings.map((booking) => (
                     <React.Fragment key={booking.booking_id}>
                       <TableRow 
                         className={`cursor-pointer hover:bg-muted/30 ${expandedId === booking.booking_id ? 'bg-muted/30' : ''}`}
@@ -165,7 +166,7 @@ export default function StaffBookings() {
                       )}
                     </React.Fragment>
                   ))}
-                  {data?.data.length === 0 && (
+                  {bookings.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                         <div className="flex flex-col items-center">

@@ -17,8 +17,8 @@ export default function StaffDashboard() {
     { query: { queryKey: getListMyBookingsQueryKey({ from_date: format(new Date(), 'yyyy-MM-dd') }) } }
   );
 
-  const upcomingBookings = bookingsData?.data.filter(b => 
-    ['approved', 'pending'].includes(b.status_name) && 
+  const upcomingBookings = (bookingsData || []).filter(b => 
+    ['approved', 'pending'].includes(b.status_name.toLowerCase()) && 
     (isAfter(new Date(b.date), startOfDay(new Date())) || new Date(b.date).toDateString() === new Date().toDateString())
   ).slice(0, 4) || [];
 

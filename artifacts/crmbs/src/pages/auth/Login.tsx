@@ -4,7 +4,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuth } from "@/components/providers/AuthProvider";
-import { getMe } from "@workspace/api-client-react";
+import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function Login() {
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { setToken } = useAuth();
 
@@ -34,9 +36,19 @@ export default function Login() {
     setIsLoading(true);
     setError(null);
     try {
+      const firebaseCredential = await signInWithEmailAndPassword(
+        auth,
+        data.email,
+        data.password,
+      );
+      const firebaseToken = await firebaseCredential.user.getIdToken();
+
       const res = await fetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${firebaseToken}`,
+        },
         body: JSON.stringify({ email: data.email, password: data.password }),
       });
 
@@ -53,12 +65,72 @@ export default function Login() {
         return;
       }
 
-      const rolePrefix = ['student', 'faculty'].includes(user.role) ? 'staff' : user.role === 'resource_manager' ? 'rm' : user.role;
+      const rolePrefix = user.role === 'resource_manager' ? 'rm' : user.role === 'faculty' ? 'staff' : user.role;
       setLocation(`/${rolePrefix}/dashboard`);
     } catch (err: any) {
       setError(err.message || "Invalid email or password. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    setError(null);
+
+    try {
+      const provider = new GoogleAuthProvider();
+      const credential = await signInWithPopup(auth, provider);
+      const firebaseUser = credential.user;
+      const idToken = await firebaseUser.getIdToken();
+
+      if (!firebaseUser.email) {
+        throw new Error("Google account does not have an email.");
+      }
+
+      const displayName = firebaseUser.displayName?.trim() || "";
+      const [firstName, ...lastNameParts] = displayName ? displayName.split(/\s+/) : ["User"];
+      const lastName = lastNameParts.join(" ") || "User";
+
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          first_name: firstName || "User",
+          last_name: lastName,
+          email: firebaseUser.email,
+          firebase_uid: firebaseUser.uid,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Google sign-in failed");
+      }
+
+      const result = await res.json();
+      setToken(result.token);
+
+      if (!result.is_active) {
+        setLocation("/pending");
+        return;
+      }
+
+      const rolePrefix = result.role === 'resource_manager' ? 'rm' : result.role === 'faculty' ? 'staff' : result.role;
+      setLocation(`/${rolePrefix}/dashboard`);
+    } catch (err: any) {
+      if (err?.code === "auth/configuration-not-found" || err?.code === "auth/operation-not-allowed") {
+        setError("Google Sign-In is not enabled in Firebase Console. Enable it in Authentication > Sign-in method > Google, then add localhost/127.0.0.1 in Authorized domains.");
+      } else if (err?.code === "auth/unauthorized-domain") {
+        setError("This domain is not authorized for Firebase Auth. Add localhost and 127.0.0.1 under Firebase Authentication > Settings > Authorized domains.");
+      } else {
+        setError(err.message || "Google sign-in failed. Please try again.");
+      }
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -116,6 +188,11 @@ export default function Login() {
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Sign In
+              </Button>
+
+              <Button type="button" variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={isGoogleLoading || isLoading}>
+                {isGoogleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Continue with Google
               </Button>
             </form>
           </CardContent>

@@ -4,6 +4,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,14 +37,25 @@ export default function Register() {
     setIsLoading(true);
     setError(null);
     try {
+      const firebaseCredential = await createUserWithEmailAndPassword(
+        auth,
+        data.email,
+        data.password,
+      );
+      const firebaseToken = await firebaseCredential.user.getIdToken();
+
       const res = await fetch("/api/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${firebaseToken}`,
+        },
         body: JSON.stringify({
           first_name: data.firstName,
           last_name: data.lastName,
           email: data.email,
           password: data.password,
+          firebase_uid: firebaseCredential.user.uid,
         }),
       });
 

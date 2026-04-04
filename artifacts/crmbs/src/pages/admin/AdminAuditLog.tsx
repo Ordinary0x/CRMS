@@ -35,9 +35,9 @@ export default function AdminAuditLog() {
                 <SelectContent>
                   <SelectItem value="all">All Tables</SelectItem>
                   <SelectItem value="users">Users</SelectItem>
-                  <SelectItem value="resources">Resources</SelectItem>
-                  <SelectItem value="bookings">Bookings</SelectItem>
-                  <SelectItem value="departments">Departments</SelectItem>
+                  <SelectItem value="resource">Resources</SelectItem>
+                  <SelectItem value="booking">Bookings</SelectItem>
+                  <SelectItem value="department">Departments</SelectItem>
                 </SelectContent>
               </Select>
             </div>

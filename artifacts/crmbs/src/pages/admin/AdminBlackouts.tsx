@@ -15,6 +15,7 @@ import { format } from "date-fns";
 
 export default function AdminBlackout() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("all");
   const queryClient = useQueryClient();
 
   const { data: blackouts, isLoading } = useAdminListBlackout({
@@ -34,8 +35,7 @@ export default function AdminBlackout() {
     const start_date = formData.get("start_date") as string;
     const end_date = formData.get("end_date") as string;
     const reason = formData.get("reason") as string;
-    const category_id_str = formData.get("category_id") as string;
-    const category_id = category_id_str && category_id_str !== "all" ? parseInt(category_id_str) : null;
+    const category_id = selectedCategoryId !== "all" ? parseInt(selectedCategoryId, 10) : null;
 
     try {
       await createBlackout.mutateAsync({
@@ -87,7 +87,7 @@ export default function AdminBlackout() {
               </div>
               <div className="space-y-2">
                 <Label>Category (Optional)</Label>
-                <Select name="category_id" defaultValue="all">
+                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>

@@ -15,6 +15,8 @@ import { toast } from "sonner";
 export default function AdminDepartments() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingDept, setEditingDept] = useState<any>(null);
+  const [createHodId, setCreateHodId] = useState("none");
+  const [editHodId, setEditHodId] = useState("none");
   const queryClient = useQueryClient();
 
   const { data: departments, isLoading } = useAdminListDepartments({
@@ -35,7 +37,7 @@ export default function AdminDepartments() {
     const dept_name = formData.get("dept_name") as string;
     const building = formData.get("building") as string;
     const email = formData.get("email") as string;
-    const hod_id = formData.get("hod_id") ? parseInt(formData.get("hod_id") as string) : null;
+    const hod_id = createHodId === "none" ? null : parseInt(createHodId, 10);
 
     try {
       await createDept.mutateAsync({
@@ -57,7 +59,7 @@ export default function AdminDepartments() {
     const dept_name = formData.get("dept_name") as string;
     const building = formData.get("building") as string;
     const email = formData.get("email") as string;
-    const hod_id = formData.get("hod_id") ? parseInt(formData.get("hod_id") as string) : null;
+    const hod_id = editHodId === "none" ? null : parseInt(editHodId, 10);
 
     try {
       await updateDept.mutateAsync({
@@ -103,12 +105,12 @@ export default function AdminDepartments() {
               </div>
               <div className="space-y-2">
                 <Label>Head of Department</Label>
-                <Select name="hod_id">
+                <Select value={createHodId} onValueChange={setCreateHodId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select HOD" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                     {usersData?.data.map((user) => (
                       <SelectItem key={user.user_id} value={user.user_id.toString()}>
                         {user.first_name} {user.last_name}
@@ -153,7 +155,17 @@ export default function AdminDepartments() {
                     <TableCell>{dept.hod_name || '-'}</TableCell>
                     <TableCell className="text-right">{dept.user_count}</TableCell>
                     <TableCell>
-                      <Dialog open={editingDept?.department_id === dept.department_id} onOpenChange={(open) => setEditingDept(open ? dept : null)}>
+                      <Dialog
+                        open={editingDept?.department_id === dept.department_id}
+                        onOpenChange={(open) => {
+                          if (open) {
+                            setEditingDept(dept);
+                            setEditHodId(dept.hod_id ? dept.hod_id.toString() : "none");
+                          } else {
+                            setEditingDept(null);
+                          }
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
                             <Edit className="h-4 w-4" />
@@ -179,7 +191,7 @@ export default function AdminDepartments() {
                               </div>
                               <div className="space-y-2">
                                 <Label>Head of Department</Label>
-                                <Select name="hod_id" defaultValue={editingDept.hod_id?.toString() || "none"}>
+                                <Select value={editHodId} onValueChange={setEditHodId}>
                                   <SelectTrigger>
                                     <SelectValue placeholder="Select HOD" />
                                   </SelectTrigger>

@@ -18,6 +18,7 @@ export default function RmResources() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [features, setFeatures] = useState<string[]>([]);
   const [featureInput, setFeatureInput] = useState("");
+  const [createCategoryId, setCreateCategoryId] = useState("");
   
   const queryClient = useQueryClient();
 
@@ -49,7 +50,12 @@ export default function RmResources() {
     const resource_name = formData.get("resource_name") as string;
     const capacity = parseInt(formData.get("capacity") as string);
     const location = formData.get("location") as string;
-    const category_id = parseInt(formData.get("category_id") as string);
+    const category_id = parseInt(createCategoryId, 10);
+
+    if (!category_id) {
+      toast.error("Please select a category");
+      return;
+    }
     
     // Transform features array into object map { "projector": true, "wifi": true }
     const featuresObj = features.reduce((acc, curr) => ({ ...acc, [curr.toLowerCase().replace(/ /g, '_')]: true }), {});
@@ -93,7 +99,7 @@ export default function RmResources() {
         
         <Dialog open={isCreateOpen} onOpenChange={(open) => {
           setIsCreateOpen(open);
-          if (!open) { setFeatures([]); setFeatureInput(""); }
+          if (!open) { setFeatures([]); setFeatureInput(""); setCreateCategoryId(""); }
         }}>
           <DialogTrigger asChild>
             <Button>
@@ -113,7 +119,7 @@ export default function RmResources() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Category *</Label>
-                  <Select name="category_id" required>
+                  <Select value={createCategoryId} onValueChange={setCreateCategoryId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select" />
                     </SelectTrigger>

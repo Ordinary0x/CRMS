@@ -14,6 +14,7 @@ import { useState } from "react";
 
 export default function HodUsers() {
   const [activatingUser, setActivatingUser] = useState<any>(null);
+  const [selectedRole, setSelectedRole] = useState("staff");
   const queryClient = useQueryClient();
 
   const { data: users, isLoading } = useHodListUsers({
@@ -25,8 +26,7 @@ export default function HodUsers() {
   const handleActivate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!activatingUser) return;
-    const formData = new FormData(e.currentTarget);
-    const role = formData.get("role") as string;
+    const role = selectedRole;
 
     try {
       await activateUser.mutateAsync({
@@ -72,7 +72,21 @@ export default function HodUsers() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell className="capitalize">{user.role}</TableCell>
                     <TableCell>
-                      <Dialog open={activatingUser?.user_id === user.user_id} onOpenChange={(open) => setActivatingUser(open ? user : null)}>
+                      <Dialog
+                        open={activatingUser?.user_id === user.user_id}
+                        onOpenChange={(open) => {
+                          if (open) {
+                            setActivatingUser(user);
+                            setSelectedRole(
+                              ["staff", "faculty", "resource_manager"].includes(user.role)
+                                ? user.role
+                                : "staff",
+                            );
+                          } else {
+                            setActivatingUser(null);
+                          }
+                        }}
+                      >
                         <DialogTrigger asChild>
                           <Button size="sm" variant="outline" className="text-green-600 border-green-200 bg-green-50 hover:bg-green-100 hover:text-green-700">
                             <CheckCircle2 className="h-4 w-4 mr-1" /> Activate
@@ -86,7 +100,10 @@ export default function HodUsers() {
                             <form onSubmit={handleActivate} className="space-y-4 mt-2">
                               <div className="space-y-2">
                                 <Label>Assign Role</Label>
-                                <Select name="role" defaultValue={activatingUser.role}>
+                                  <Select
+                                    value={selectedRole}
+                                    onValueChange={setSelectedRole}
+                                  >
                                   <SelectTrigger>
                                     <SelectValue />
                                   </SelectTrigger>

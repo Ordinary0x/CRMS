@@ -10,7 +10,7 @@ export default function Unauthorized() {
 
   const goBack = () => {
     if (dbUser) {
-      const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role;
+      const rolePrefix = dbUser.role === 'resource_manager' ? 'rm' : dbUser.role === 'faculty' ? 'staff' : dbUser.role;
       setLocation(`/${rolePrefix}/dashboard`);
     } else {
       setLocation("/");

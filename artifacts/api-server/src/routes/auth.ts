@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
-import { verifyToken, JWT_SECRET } from "../middlewares/verifyToken";
+import { verifyTokenAllowInactive, JWT_SECRET } from "../middlewares/verifyToken";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
@@ -82,13 +82,30 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     // Check if user already exists by email
     const existing = await client.query(
-      "SELECT user_id, role, is_active FROM users WHERE email = $1",
+      "SELECT user_id, role, is_active, firebase_uid FROM users WHERE email = $1",
       [email]
     );
 
     if (existing.rows[0]) {
+      let uidForToken = existing.rows[0].firebase_uid as string;
+
+      if (firebase_uid && firebase_uid !== uidForToken) {
+        const uidAlreadyUsed = await client.query(
+          "SELECT user_id FROM users WHERE firebase_uid = $1",
+          [firebase_uid],
+        );
+
+        if (!uidAlreadyUsed.rows[0]) {
+          await client.query(
+            "UPDATE users SET firebase_uid = $1 WHERE user_id = $2",
+            [firebase_uid, existing.rows[0].user_id],
+          );
+          uidForToken = firebase_uid;
+        }
+      }
+
       const token = jwt.sign(
-        { uid, email },
+        { uid: uidForToken, email },
         JWT_SECRET,
         { expiresIn: "7d" }
       );
@@ -152,8 +169,8 @@ router.post("/auth/register", async (req, res): Promise<void> => {
   }
 });
 
-// GET /auth/me — get current user profile
-router.get("/auth/me", verifyToken, async (req, res): Promise<void> => {
+// GET /auth/me — get current user profile (allows inactive accounts)
+router.get("/auth/me", verifyTokenAllowInactive, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     const result = await client.query(

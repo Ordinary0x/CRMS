@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAdminListUsers, useAdminUpdateUserRole, useAdminDeleteUser, getAdminListUsersQueryKey, useAdminListDepartments, getAdminListDepartmentsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,11 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { StatusBadge, PriorityBadge } from "@/components/shared/Badges";
+import { StatusBadge } from "@/components/shared/Badges";
 import { TableSkeleton } from "@/components/shared/StateUI";
-import { format } from "date-fns";
-import { Search, Edit, Trash2, Ban, CheckCircle } from "lucide-react";
+import { Search, Edit, Ban, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
@@ -20,13 +18,27 @@ export default function AdminUsers() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [editRole, setEditRole] = useState("student");
+  const [editDepartmentId, setEditDepartmentId] = useState("none");
+  const [editIsActive, setEditIsActive] = useState(true);
   
   const queryClient = useQueryClient();
 
+  const listParams = useMemo(() => ({
+    page,
+    limit: 10,
+    search: search || undefined,
+    role: roleFilter !== "all" ? roleFilter : undefined,
+    department_id: departmentFilter !== "all" ? parseInt(departmentFilter, 10) : undefined,
+    is_active: statusFilter !== "all" ? statusFilter : undefined,
+  }), [page, search, roleFilter, departmentFilter, statusFilter]);
+
   const { data, isLoading } = useAdminListUsers(
-    { page, limit: 10, search: search || undefined, role: roleFilter !== "all" ? roleFilter : undefined },
-    { query: { queryKey: getAdminListUsersQueryKey({ page, limit: 10, search: search || undefined, role: roleFilter !== "all" ? roleFilter : undefined }) } }
+    listParams,
+    { query: { queryKey: getAdminListUsersQueryKey(listParams) } }
   );
 
   const { data: departments } = useAdminListDepartments({
@@ -40,10 +52,9 @@ export default function AdminUsers() {
     e.preventDefault();
     if (!editingUser) return;
 
-    const formData = new FormData(e.currentTarget);
-    const role = formData.get("role") as string;
-    const department_id = formData.get("department_id") ? parseInt(formData.get("department_id") as string) : null;
-    const is_active = formData.get("is_active") === "on";
+    const role = editRole;
+    const department_id = editDepartmentId === "none" ? null : parseInt(editDepartmentId, 10);
+    const is_active = editIsActive;
 
     try {
       await updateRole.mutateAsync({
@@ -52,7 +63,7 @@ export default function AdminUsers() {
       });
       toast.success("User updated successfully");
       setEditingUser(null);
-      queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey(listParams) });
     } catch (error) {
       toast.error("Failed to update user");
     }
@@ -65,7 +76,7 @@ export default function AdminUsers() {
         data: { role: user.role, is_active: !user.is_active }
       });
       toast.success(`User ${!user.is_active ? 'activated' : 'deactivated'} successfully`);
-      queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getAdminListUsersQueryKey(listParams) });
     } catch (error) {
       toast.error("Failed to update user status");
     }
@@ -105,6 +116,33 @@ export default function AdminUsers() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="w-full sm:w-[200px]">
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departments?.map((d) => (
+                    <SelectItem key={d.department_id} value={d.department_id.toString()}>
+                      {d.dept_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full sm:w-[180px]">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="true">Active</SelectItem>
+                  <SelectItem value="false">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {isLoading ? (
@@ -136,7 +174,19 @@ export default function AdminUsers() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Dialog open={editingUser?.user_id === user.user_id} onOpenChange={(open) => setEditingUser(open ? user : null)}>
+                          <Dialog
+                            open={editingUser?.user_id === user.user_id}
+                            onOpenChange={(open) => {
+                              if (open) {
+                                setEditingUser(user);
+                                setEditRole(user.role);
+                                setEditDepartmentId(user.department_id ? user.department_id.toString() : "none");
+                                setEditIsActive(Boolean(user.is_active));
+                              } else {
+                                setEditingUser(null);
+                              }
+                            }}
+                          >
                             <DialogTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
                                 <Edit className="h-4 w-4" />
@@ -150,7 +200,7 @@ export default function AdminUsers() {
                                 <form onSubmit={handleUpdateUser} className="space-y-4">
                                   <div className="space-y-2">
                                     <Label>Role</Label>
-                                    <Select name="role" defaultValue={editingUser.role}>
+                                    <Select value={editRole} onValueChange={setEditRole}>
                                       <SelectTrigger>
                                         <SelectValue />
                                       </SelectTrigger>
@@ -166,7 +216,7 @@ export default function AdminUsers() {
                                   </div>
                                   <div className="space-y-2">
                                     <Label>Department</Label>
-                                    <Select name="department_id" defaultValue={editingUser.department_id?.toString() || ""}>
+                                    <Select value={editDepartmentId} onValueChange={setEditDepartmentId}>
                                       <SelectTrigger>
                                         <SelectValue placeholder="None" />
                                       </SelectTrigger>
@@ -182,7 +232,15 @@ export default function AdminUsers() {
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <Label>Active Status</Label>
-                                    <Switch name="is_active" defaultChecked={editingUser.is_active} />
+                                    <Select value={editIsActive ? "true" : "false"} onValueChange={(value) => setEditIsActive(value === "true")}>
+                                      <SelectTrigger className="w-36">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="true">Active</SelectItem>
+                                        <SelectItem value="false">Inactive</SelectItem>
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                   <Button type="submit" className="w-full" disabled={updateRole.isPending}>
                                     Save Changes

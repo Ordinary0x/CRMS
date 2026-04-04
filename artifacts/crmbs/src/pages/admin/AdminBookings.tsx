@@ -94,7 +94,7 @@ export default function AdminBookings() {
                         <StatusBadge status={booking.status_name} />
                       </TableCell>
                       <TableCell>
-                        {['pending', 'approved'].includes(booking.status_name) && (
+                        {['pending', 'approved'].includes(booking.status_name.toLowerCase()) && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">

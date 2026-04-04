@@ -53,7 +53,7 @@ function RootRedirect() {
   if (dbUser && !dbUser.is_active) return <Redirect to="/pending" />;
   
   if (dbUser) {
-    const rolePrefix = ['student', 'faculty'].includes(dbUser.role) ? 'staff' : dbUser.role === 'resource_manager' ? 'rm' : dbUser.role;
+    const rolePrefix = dbUser.role === 'resource_manager' ? 'rm' : dbUser.role === 'faculty' ? 'staff' : dbUser.role;
     return <Redirect to={`/${rolePrefix}/dashboard`} />;
   }
   
