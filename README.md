@@ -36,6 +36,7 @@ You can use either defaults baked into code or define environment variables.
 
 ### Frontend env (optional if using defaults)
 
+- `VITE_API_BASE_URL` (for static deploys, set to your backend URL, e.g. `https://crms-api.onrender.com`)
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_PROJECT_ID`
@@ -115,4 +116,3 @@ Frontend URL:
 ```bash
 curl -s http://127.0.0.1:5000/api/healthz
 ```
-

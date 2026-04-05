@@ -6,12 +6,23 @@ import * as z from "zod";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { withApiBase } from "@/lib/api-base";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarClock, Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+
+async function readJsonSafely(response: Response): Promise<any | null> {
+  const raw = await response.text();
+  if (!raw || raw.trim() === "") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { error: raw };
+  }
+}
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -43,7 +54,7 @@ export default function Login() {
       );
       const firebaseToken = await firebaseCredential.user.getIdToken();
 
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(withApiBase("/api/auth/login"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -52,12 +63,15 @@ export default function Login() {
         body: JSON.stringify({ email: data.email, password: data.password }),
       });
 
+      const payload = await readJsonSafely(res);
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Invalid email or password");
+        throw new Error(payload?.error || `Login failed (HTTP ${res.status})`);
+      }
+      if (!payload?.token || !payload?.user) {
+        throw new Error("Login failed: server returned an invalid response");
       }
 
-      const { token, user } = await res.json();
+      const { token, user } = payload;
       setToken(token);
 
       if (!user.is_active) {
@@ -92,7 +106,7 @@ export default function Login() {
       const [firstName, ...lastNameParts] = displayName ? displayName.split(/\s+/) : ["User"];
       const lastName = lastNameParts.join(" ") || "User";
 
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch(withApiBase("/api/auth/register"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,12 +120,14 @@ export default function Login() {
         }),
       });
 
+      const result = await readJsonSafely(res);
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Google sign-in failed");
+        throw new Error(result?.error || `Google sign-in failed (HTTP ${res.status})`);
+      }
+      if (!result?.token) {
+        throw new Error("Google sign-in failed: server returned an invalid response");
       }
 
-      const result = await res.json();
       setToken(result.token);
 
       if (!result.is_active) {
