@@ -64,7 +64,9 @@ export default function StaffBookings() {
                     const bookingDatePart = String(booking.date).slice(0, 10);
                     const bookingStartPart = String(booking.start_time).slice(0, 8);
                     const startAt = new Date(`${bookingDatePart}T${bookingStartPart}`);
-                    const canCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase()) && !Number.isNaN(startAt.getTime()) && startAt > new Date();
+                    const canAttemptCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase());
+                    const hasStarted = !Number.isNaN(startAt.getTime()) && startAt <= new Date();
+                    const canCancel = canAttemptCancel && !hasStarted;
                     return (
                     <React.Fragment key={booking.booking_id}>
                       <TableRow
@@ -110,6 +112,11 @@ export default function StaffBookings() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                          )}
+                          {canAttemptCancel && hasStarted && (
+                            <Button variant="ghost" size="sm" disabled className="text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+                              <Ban className="h-4 w-4 mr-2" /> Started
+                            </Button>
                           )}
                         </TableCell>
                       </TableRow>
