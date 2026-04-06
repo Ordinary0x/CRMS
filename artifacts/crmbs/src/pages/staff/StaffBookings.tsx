@@ -31,8 +31,9 @@ export default function StaffBookings() {
       await cancelBooking.mutateAsync({ id });
       toast.success("Booking cancelled successfully");
       queryClient.invalidateQueries({ queryKey: getListMyBookingsQueryKey({}) });
-    } catch (error) {
-      toast.error("Failed to cancel booking");
+    } catch (error: any) {
+      const msg = error?.data?.error || error?.message || "Failed to cancel booking";
+      toast.error(msg);
     }
   };
 
@@ -106,9 +107,12 @@ export default function StaffBookings() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Close</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleCancel(booking.booking_id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                                    Confirm Cancellation
-                                  </AlertDialogAction>
+                                <AlertDialogAction
+                                  onClick={() => handleCancel(booking.booking_id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Confirm Cancellation
+                                </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>

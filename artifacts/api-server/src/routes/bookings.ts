@@ -195,7 +195,10 @@ router.patch("/bookings/:id/cancel", verifyToken, async (req, res): Promise<void
       return;
     }
 
-    const bookingDatePart = String(b.date).slice(0, 10);
+    const bookingDatePart =
+      b.date instanceof Date
+        ? b.date.toISOString().slice(0, 10)
+        : String(b.date).slice(0, 10);
     const bookingStartPart = String(b.start_time).slice(0, 8);
     const startAt = new Date(`${bookingDatePart}T${bookingStartPart}`);
     if (Number.isNaN(startAt.getTime()) || startAt <= new Date()) {
