@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/Badges";
 import { TableSkeleton } from "@/components/shared/StateUI";
-import { format } from "date-fns";
+import { addDays, format, parseISO, startOfDay } from "date-fns";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Ban, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
@@ -26,9 +26,7 @@ export default function StaffBookings() {
   const bookings = data || [];
 
   const cancelBooking = useCancelBooking();
-  const tomorrowStart = new Date();
-  tomorrowStart.setHours(0, 0, 0, 0);
-  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const tomorrowStart = startOfDay(addDays(new Date(), 1));
 
   const handleCancel = async (id: number) => {
     try {
@@ -64,9 +62,12 @@ export default function StaffBookings() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {bookings.map((booking) => (
+                  {bookings.map((booking) => {
+                    const bookingDay = startOfDay(parseISO(booking.date));
+                    const canCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase()) && bookingDay >= tomorrowStart;
+                    return (
                     <React.Fragment key={booking.booking_id}>
-                      <TableRow 
+                      <TableRow
                         className={`cursor-pointer hover:bg-muted/30 ${expandedId === booking.booking_id ? 'bg-muted/30' : ''}`}
                         onClick={() => setExpandedId(expandedId === booking.booking_id ? null : booking.booking_id)}
                       >
@@ -77,7 +78,7 @@ export default function StaffBookings() {
                         <TableCell className="font-medium text-foreground">{booking.resource_name}</TableCell>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="font-medium text-foreground">{format(new Date(booking.date), 'MMM d, yyyy')}</span>
+                            <span className="font-medium text-foreground">{format(parseISO(booking.date), 'MMM d, yyyy')}</span>
                               <span className="text-xs text-muted-foreground flex items-center mt-1">
                                <Clock className="w-3 h-3 mr-1" /> {formatTime(booking.start_time)} - {formatTime(booking.end_time)}
                               </span>
@@ -87,7 +88,7 @@ export default function StaffBookings() {
                           <StatusBadge status={booking.status_name} />
                         </TableCell>
                         <TableCell>
-                          {['pending', 'approved'].includes(booking.status_name.toLowerCase()) && new Date(booking.date) >= tomorrowStart && (
+                          {canCancel && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => e.stopPropagation()}>
@@ -98,7 +99,7 @@ export default function StaffBookings() {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>Cancel Booking</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    Are you sure you want to cancel this booking for {booking.resource_name} on {format(new Date(booking.date), 'MMM d, yyyy')}?
+                                    Are you sure you want to cancel this booking for {booking.resource_name} on {format(parseISO(booking.date), 'MMM d, yyyy')}?
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
@@ -168,7 +169,8 @@ export default function StaffBookings() {
                         </TableRow>
                       )}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                   {bookings.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">

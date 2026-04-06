@@ -201,6 +201,47 @@ router.patch("/rm/resources/:id/status", ...rmAuth, async (req, res): Promise<vo
   }
 });
 
+// DELETE /rm/resources/:id (RM can remove owned resource)
+router.delete("/rm/resources/:id", ...rmAuth, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  const client = await pool.connect();
+  try {
+    const check = await client.query(
+      "SELECT manager_id FROM resource WHERE resource_id = $1",
+      [id]
+    );
+    if (!check.rows[0] || check.rows[0].manager_id !== req.user!.user_id) {
+      res.status(403).json({ error: "You don't manage this resource" });
+      return;
+    }
+
+    const bookingsCount = await client.query(
+      "SELECT COUNT(*)::INT as count FROM booking WHERE resource_id = $1",
+      [id]
+    );
+    const hasBookings = bookingsCount.rows[0].count > 0;
+
+    if (hasBookings) {
+      await client.query(
+        "UPDATE resource SET status = 'inactive' WHERE resource_id = $1",
+        [id]
+      );
+      res.json({
+        message: "Resource has booking history, so it was marked inactive instead of being deleted",
+      });
+      return;
+    }
+
+    await client.query("DELETE FROM resource_unavailability WHERE resource_id = $1", [id]);
+    await client.query("DELETE FROM resource WHERE resource_id = $1", [id]);
+
+    res.json({ message: "Resource removed" });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /rm/resources/:id/unavailability
 router.post("/rm/resources/:id/unavailability", ...rmAuth, async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -428,8 +469,16 @@ router.get("/rm/analytics", ...rmAuth, async (req, res): Promise<void> => {
 router.get("/rm/dashboard", ...rmAuth, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
-    const [myResources, pendingApprovals, todaysBookings, statusBreakdown] = await Promise.all([
-      client.query("SELECT COUNT(*)::INT as count FROM resource WHERE manager_id = $1", [req.user!.user_id]),
+    const [myResources, pendingApprovals, todaysBookings, recentApprovals] = await Promise.all([
+      client.query(
+        `SELECT
+         COUNT(*)::INT as total,
+         COUNT(*) FILTER (WHERE status = 'active')::INT as active,
+         COUNT(*) FILTER (WHERE status = 'inactive')::INT as inactive,
+         COUNT(*) FILTER (WHERE status = 'maintenance')::INT as maintenance
+         FROM resource WHERE manager_id = $1`,
+        [req.user!.user_id]
+      ),
       client.query(
         `SELECT COUNT(*)::INT as count FROM approval a
          JOIN booking b ON b.booking_id = a.booking_id
@@ -445,20 +494,30 @@ router.get("/rm/dashboard", ...rmAuth, async (req, res): Promise<void> => {
         [req.user!.user_id]
       ),
       client.query(
-        `SELECT
-         COUNT(*) FILTER (WHERE status = 'active')::INT as active,
-         COUNT(*) FILTER (WHERE status = 'inactive')::INT as inactive,
-         COUNT(*) FILTER (WHERE status = 'maintenance')::INT as maintenance
-         FROM resource WHERE manager_id = $1`,
+        `SELECT a.approval_id, b.booking_id, b.created_at, b.date, b.start_time, b.end_time,
+         r.resource_name, CONCAT(u.first_name, ' ', u.last_name) as requester_name
+         FROM approval a
+         JOIN booking b ON b.booking_id = a.booking_id
+         JOIN booking_status bs ON bs.status_id = b.status_id AND bs.status_name = 'Pending'
+         JOIN resource r ON r.resource_id = b.resource_id
+         JOIN users u ON u.user_id = b.user_id
+         WHERE a.step_number = 1 AND a.decision IS NULL AND r.manager_id = $1
+         ORDER BY b.created_at ASC
+         LIMIT 8`,
         [req.user!.user_id]
       ),
     ]);
 
     res.json({
-      my_resources: myResources.rows[0].count,
+      my_resources: myResources.rows[0].total,
       pending_approvals: pendingApprovals.rows[0].count,
       todays_bookings: todaysBookings.rows[0].count,
-      status_breakdown: statusBreakdown.rows[0],
+      status_breakdown: {
+        active: myResources.rows[0].active,
+        inactive: myResources.rows[0].inactive,
+        maintenance: myResources.rows[0].maintenance,
+      },
+      recent_pending_approvals: recentApprovals.rows,
     });
   } finally {
     client.release();

@@ -58,6 +58,7 @@ export default function HodAnalytics() {
           { label: "Approved", value: data?.approved_bookings ?? 0 },
           { label: "Pending", value: data?.pending_bookings ?? 0 },
           { label: "Rejected", value: data?.rejected_bookings ?? 0 },
+          { label: "Cancelled", value: data?.cancelled_bookings ?? 0 },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardHeader className="pb-2">

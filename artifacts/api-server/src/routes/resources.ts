@@ -124,6 +124,39 @@ router.get("/resources/:id/availability", verifyToken, async (req, res): Promise
 
   const client = await pool.connect();
   try {
+    const resourceCheck = await client.query(
+      `SELECT r.resource_id, r.status, r.category_id
+       FROM resource r
+       WHERE r.resource_id = $1`,
+      [id]
+    );
+
+    if (!resourceCheck.rows[0]) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    const resource = resourceCheck.rows[0];
+
+    if (resource.status !== "active") {
+      res.status(400).json({ error: "Resource is not active" });
+      return;
+    }
+
+    const blackoutResult = await client.query(
+      `SELECT 1
+       FROM blackout_period bp
+       WHERE ($2::date BETWEEN bp.start_date AND bp.end_date)
+         AND (bp.category_id IS NULL OR bp.category_id = $1)
+       LIMIT 1`,
+      [resource.category_id, date]
+    );
+
+    if (blackoutResult.rows[0]) {
+      res.status(400).json({ error: "Date falls within a blackout period" });
+      return;
+    }
+
     const busyResult = await client.query(
       `SELECT b.start_time, b.end_time, b.booking_id, b.purpose
        FROM booking b

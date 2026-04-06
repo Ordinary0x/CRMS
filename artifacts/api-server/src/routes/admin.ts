@@ -520,13 +520,66 @@ router.patch("/admin/resources/:id", ...adminAuth, async (req, res): Promise<voi
   }
 });
 
+// DELETE /admin/resources/:id (admin can remove resources)
+router.delete("/admin/resources/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  const client = await pool.connect();
+  try {
+    const resourceCheck = await client.query(
+      "SELECT resource_id, resource_name FROM resource WHERE resource_id = $1",
+      [id]
+    );
+    if (!resourceCheck.rows[0]) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    const bookingsCount = await client.query(
+      "SELECT COUNT(*)::INT as count FROM booking WHERE resource_id = $1",
+      [id]
+    );
+    const hasBookings = bookingsCount.rows[0].count > 0;
+
+    if (hasBookings) {
+      await client.query(
+        "UPDATE resource SET status = 'inactive' WHERE resource_id = $1",
+        [id]
+      );
+      res.json({
+        message: "Resource has booking history, so it was marked inactive instead of being deleted",
+      });
+      return;
+    }
+
+    await client.query("DELETE FROM resource_unavailability WHERE resource_id = $1", [id]);
+    await client.query("DELETE FROM resource WHERE resource_id = $1", [id]);
+    res.json({ message: "Resource removed" });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /admin/dashboard
 router.get("/admin/dashboard", ...adminAuth, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
-    const [users, resources, bookingsToday, pendingApprovals, recentAudit, busiest] = await Promise.all([
-      client.query("SELECT COUNT(*)::INT as count FROM users WHERE is_active = true"),
-      client.query("SELECT COUNT(*)::INT as count FROM resource WHERE status = 'active'"),
+    const [users, resources, bookingsToday, pendingApprovals, recentAudit, busiest, recentBookings] = await Promise.all([
+      client.query(
+        `SELECT
+         COUNT(*)::INT as total_users,
+         COUNT(*) FILTER (WHERE is_active = true)::INT as active_users,
+         COUNT(*) FILTER (WHERE is_active = false)::INT as inactive_users
+         FROM users`
+      ),
+      client.query(
+        `SELECT
+         COUNT(*)::INT as total_resources,
+         COUNT(*) FILTER (WHERE status = 'active')::INT as active_resources,
+         COUNT(*) FILTER (WHERE status = 'inactive')::INT as inactive_resources,
+         COUNT(*) FILTER (WHERE status = 'maintenance')::INT as maintenance_resources
+         FROM resource`
+      ),
       client.query("SELECT COUNT(*)::INT as count FROM booking WHERE date = CURRENT_DATE"),
       client.query(
         `SELECT COUNT(*)::INT as count FROM approval a
@@ -548,18 +601,34 @@ router.get("/admin/dashboard", ...adminAuth, async (req, res): Promise<void> => 
          LEFT JOIN booking b ON b.resource_id = r.resource_id
            AND b.date >= CURRENT_DATE - INTERVAL '7 days'
          GROUP BY r.resource_id, r.resource_name, rc.category_name
-         ORDER BY total_bookings DESC
-         LIMIT 5`
+          ORDER BY total_bookings DESC
+          LIMIT 5`
+      ),
+      client.query(
+        `SELECT b.booking_id, bs.status_name, r.resource_name, b.created_at,
+         CONCAT(u.first_name, ' ', u.last_name) as requested_by
+         FROM booking b
+         JOIN booking_status bs ON bs.status_id = b.status_id
+         JOIN resource r ON r.resource_id = b.resource_id
+         JOIN users u ON u.user_id = b.user_id
+         ORDER BY b.created_at DESC
+         LIMIT 10`
       ),
     ]);
 
     res.json({
-      total_users: users.rows[0].count,
-      total_resources: resources.rows[0].count,
+      total_users: users.rows[0].total_users,
+      active_users: users.rows[0].active_users,
+      inactive_users: users.rows[0].inactive_users,
+      total_resources: resources.rows[0].total_resources,
+      active_resources: resources.rows[0].active_resources,
+      inactive_resources: resources.rows[0].inactive_resources,
+      maintenance_resources: resources.rows[0].maintenance_resources,
       bookings_today: bookingsToday.rows[0].count,
       pending_approvals: pendingApprovals.rows[0].count,
       recent_audit_log: recentAudit.rows,
       busiest_resources: busiest.rows,
+      recent_bookings: recentBookings.rows,
     });
   } finally {
     client.release();

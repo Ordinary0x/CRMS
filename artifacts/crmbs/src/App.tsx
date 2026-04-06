@@ -106,6 +106,7 @@ function Router() {
               <Route path="/admin/audit-log" component={AdminAuditLog} />
               <Route path="/admin/blackout" component={AdminBlackouts} />
               <Route path="/admin/analytics" component={AdminAnalytics} />
+              <Route path="/admin/profile" component={UserProfile} />
             </Switch>
           </AppLayout>
         </ProtectedRoute>
@@ -121,6 +122,7 @@ function Router() {
               <Route path="/hod/approvals" component={HodApprovals} />
               <Route path="/hod/bookings" component={HodBookings} />
               <Route path="/hod/analytics" component={HodAnalytics} />
+              <Route path="/hod/profile" component={UserProfile} />
             </Switch>
           </AppLayout>
         </ProtectedRoute>
@@ -135,6 +137,7 @@ function Router() {
               <Route path="/rm/resources" component={RmResources} />
               <Route path="/rm/approvals" component={RmApprovals} />
               <Route path="/rm/analytics" component={RmAnalytics} />
+              <Route path="/rm/profile" component={UserProfile} />
             </Switch>
           </AppLayout>
         </ProtectedRoute>

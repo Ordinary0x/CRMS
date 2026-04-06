@@ -1,4 +1,4 @@
-import { useHodListUsers, useHodActivateUser, getHodListUsersQueryKey } from "@workspace/api-client-react";
+import { useHodListUsers, useHodActivateUser, getHodListUsersQueryKey, customFetch } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,6 +22,21 @@ export default function HodUsers() {
   });
 
   const activateUser = useHodActivateUser();
+
+  const handleRoleUpdate = async (userId: number, role: string) => {
+    try {
+      await customFetch(`/api/hod/users/${userId}/activate`, {
+        method: "PATCH",
+        responseType: "json",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      toast.success("User role updated");
+      queryClient.invalidateQueries({ queryKey: getHodListUsersQueryKey() });
+    } catch {
+      toast.error("Failed to update role");
+    }
+  };
 
   const handleActivate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -143,6 +158,7 @@ export default function HodUsers() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-[180px]">Assign Role</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -152,11 +168,26 @@ export default function HodUsers() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell className="capitalize">{user.role.replace('_', ' ')}</TableCell>
                     <TableCell><StatusBadge status="active" /></TableCell>
+                    <TableCell>
+                      <Select
+                        value={user.role}
+                        onValueChange={(value) => handleRoleUpdate(user.user_id, value)}
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="staff">Staff</SelectItem>
+                          <SelectItem value="faculty">Faculty</SelectItem>
+                          <SelectItem value="resource_manager">Resource Manager</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {activeUsers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       No active users in your department.
                     </TableCell>
                   </TableRow>

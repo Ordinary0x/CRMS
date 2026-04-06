@@ -4,6 +4,7 @@ import { Users, Database, CalendarDays, CheckSquare, Activity } from "lucide-rea
 import { format } from "date-fns";
 import { CardGridSkeleton } from "@/components/shared/StateUI";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
+import { Badge } from "@/components/ui/badge";
 
 export default function AdminDashboard() {
   const { data, isLoading } = useAdminDashboard({ query: { queryKey: getAdminDashboardQueryKey() } });
@@ -31,6 +32,9 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.total_users}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Active: {(data as any).active_users ?? data.total_users} · Inactive: {(data as any).inactive_users ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -40,6 +44,9 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.total_resources}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Active: {(data as any).active_resources ?? data.total_resources} · Inactive: {(data as any).inactive_resources ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -122,6 +129,29 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Bookings Log</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!(data as any).recent_bookings || (data as any).recent_bookings.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4">No recent bookings</div>
+          ) : (
+            <div className="space-y-3">
+              {(data as any).recent_bookings.map((b: any) => (
+                <div key={b.booking_id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                  <div>
+                    <p className="text-sm font-medium">#{b.booking_id} · {b.resource_name}</p>
+                    <p className="text-xs text-muted-foreground">{b.requested_by} · {format(new Date(b.created_at), 'MMM d, h:mm a')}</p>
+                  </div>
+                  <Badge variant="outline">{b.status_name}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

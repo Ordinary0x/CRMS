@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 
 interface HodDashboardData {
   dept_users: number;
+  dept_users_total?: number;
+  dept_users_inactive?: number;
   pending_approvals: number;
   bookings_today: number;
   recent_pending: Array<{
@@ -19,6 +21,14 @@ interface HodDashboardData {
     purpose: string;
     resource_name: string;
     requester_name: string;
+  }>; 
+  role_breakdown?: Array<{ role: string; active_count: number; inactive_count: number }>;
+  recent_department_activity?: Array<{
+    booking_id: number;
+    status_name: string;
+    resource_name: string;
+    created_at: string;
+    requested_by: string;
   }>;
 }
 
@@ -49,7 +59,9 @@ export default function HodDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data?.dept_users ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Active members</p>
+            <p className="text-xs text-muted-foreground">
+              Active: {data?.dept_users ?? 0} · Inactive: {data?.dept_users_inactive ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -103,6 +115,51 @@ export default function HodDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Role Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!data?.role_breakdown || data.role_breakdown.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No role data</div>
+            ) : (
+              <div className="space-y-3">
+                {data.role_breakdown.map((row) => (
+                  <div key={row.role} className="flex items-center justify-between border-b pb-2 last:border-0">
+                    <span className="text-sm capitalize">{row.role.replace('_', ' ')}</span>
+                    <span className="text-xs text-muted-foreground">A:{row.active_count} · I:{row.inactive_count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Department Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!data?.recent_department_activity || data.recent_department_activity.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No recent activity</div>
+            ) : (
+              <div className="space-y-3">
+                {data.recent_department_activity.map((item) => (
+                  <div key={item.booking_id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium">#{item.booking_id} · {item.resource_name}</p>
+                      <p className="text-xs text-muted-foreground">{item.requested_by} · {format(new Date(item.created_at), 'MMM d, h:mm a')}</p>
+                    </div>
+                    <Badge variant="outline">{item.status_name}</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

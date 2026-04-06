@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Database, CalendarDays, CheckSquare } from "lucide-react";
 import { CardGridSkeleton } from "@/components/shared/StateUI";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from "recharts";
+import { format } from "date-fns";
+import { Badge } from "@/components/ui/badge";
 
 const COLORS = ['#22c55e', '#ef4444', '#f59e0b'];
 
@@ -87,6 +89,29 @@ export default function RmDashboard() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending Approvals Queue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!(data as any).recent_pending_approvals || (data as any).recent_pending_approvals.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No pending approvals</div>
+            ) : (
+              <div className="space-y-3">
+                {(data as any).recent_pending_approvals.map((item: any) => (
+                  <div key={item.approval_id} className="flex items-center justify-between border-b pb-2 last:border-0">
+                    <div>
+                      <p className="text-sm font-medium">{item.resource_name}</p>
+                      <p className="text-xs text-muted-foreground">{item.requester_name} · {format(new Date(item.created_at), 'MMM d, h:mm a')}</p>
+                    </div>
+                    <Badge variant="outline">Pending</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

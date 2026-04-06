@@ -1,10 +1,10 @@
-import { useRmListResources, useRmCreateResource, useRmUpdateResourceStatus, getRmListResourcesQueryKey, useListResourceCategories, getListResourceCategoriesQueryKey } from "@workspace/api-client-react";
+import { useRmListResources, useRmCreateResource, useRmUpdateResourceStatus, getRmListResourcesQueryKey, useListResourceCategories, getListResourceCategoriesQueryKey, customFetch } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusBadge } from "@/components/shared/Badges";
@@ -13,6 +13,7 @@ import { Plus, Edit, Settings, Database, Users, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Trash2 } from "lucide-react";
 
 export default function RmResources() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -20,6 +21,11 @@ export default function RmResources() {
   const [featureInput, setFeatureInput] = useState("");
   const [createCategoryId, setCreateCategoryId] = useState("");
   const [createApprovalSteps, setCreateApprovalSteps] = useState("inherit");
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingResource, setEditingResource] = useState<any | null>(null);
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editApprovalSteps, setEditApprovalSteps] = useState("0");
+  const [editStatus, setEditStatus] = useState("active");
   
   const queryClient = useQueryClient();
 
@@ -94,6 +100,56 @@ export default function RmResources() {
       queryClient.invalidateQueries({ queryKey: getRmListResourcesQueryKey() });
     } catch (error) {
       toast.error("Failed to update status");
+    }
+  };
+
+  const handleOpenEdit = (resource: any) => {
+    setEditingResource(resource);
+    setEditCategoryId(String(resource.category_id));
+    setEditApprovalSteps(resource.approval_steps === 2 ? "2" : resource.approval_steps === 1 ? "1" : "0");
+    setEditStatus(resource.status || "active");
+    setIsEditOpen(true);
+  };
+
+  const handleEditSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingResource) return;
+
+    const formData = new FormData(e.currentTarget);
+    try {
+      await customFetch(`/api/rm/resources/${editingResource.resource_id}`, {
+        method: "PATCH",
+        responseType: "json",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resource_name: (formData.get("resource_name") as string)?.trim(),
+          capacity: Number(formData.get("capacity")),
+          location: ((formData.get("location") as string) || "").trim() || null,
+          status: editStatus,
+          category_id: Number(editCategoryId),
+          approval_steps_override: Number(editApprovalSteps),
+        }),
+      });
+
+      toast.success("Resource updated successfully");
+      setIsEditOpen(false);
+      setEditingResource(null);
+      queryClient.invalidateQueries({ queryKey: getRmListResourcesQueryKey() });
+    } catch {
+      toast.error("Failed to update resource");
+    }
+  };
+
+  const handleRemove = async (id: number) => {
+    try {
+      const result = await customFetch<{ message: string }>(`/api/rm/resources/${id}`, {
+        method: "DELETE",
+        responseType: "json",
+      });
+      toast.success(result.message || "Resource updated");
+      queryClient.invalidateQueries({ queryKey: getRmListResourcesQueryKey() });
+    } catch {
+      toast.error("Failed to remove resource");
     }
   };
 
@@ -234,8 +290,11 @@ export default function RmResources() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => {}}>
+                          <DropdownMenuItem onClick={() => handleOpenEdit(resource)}>
                             <Edit className="mr-2 h-4 w-4" /> Edit Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => handleRemove(resource.resource_id)}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Remove
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuLabel>Set Status</DropdownMenuLabel>
@@ -265,6 +324,72 @@ export default function RmResources() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Resource</DialogTitle>
+          </DialogHeader>
+          {editingResource ? (
+            <form onSubmit={handleEditSave} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Resource Name *</Label>
+                <Input name="resource_name" defaultValue={editingResource.resource_name} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Category *</Label>
+                  <Select value={editCategoryId} onValueChange={setEditCategoryId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories?.map((c) => (
+                        <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Capacity *</Label>
+                  <Input name="capacity" type="number" required min="1" defaultValue={editingResource.capacity} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input name="location" defaultValue={editingResource.location || ""} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={editStatus} onValueChange={setEditStatus}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="maintenance">Maintenance</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Approval Flow</Label>
+                  <Select value={editApprovalSteps} onValueChange={setEditApprovalSteps}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">0 steps (auto)</SelectItem>
+                      <SelectItem value="1">1 step</SelectItem>
+                      <SelectItem value="2">2 steps</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit">Save changes</Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

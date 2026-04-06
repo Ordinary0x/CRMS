@@ -8,11 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Search, MapPin, Users, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MoreVertical, Pencil, Trash2 } from "lucide-react";
 
 export default function AdminResources() {
   const [search, setSearch] = useState("");
@@ -21,6 +23,13 @@ export default function AdminResources() {
   const [managerId, setManagerId] = useState("none");
   const [departmentId, setDepartmentId] = useState("none");
   const [approvalSteps, setApprovalSteps] = useState("inherit");
+  const [editingResource, setEditingResource] = useState<any | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editManagerId, setEditManagerId] = useState("none");
+  const [editDepartmentId, setEditDepartmentId] = useState("none");
+  const [editApprovalSteps, setEditApprovalSteps] = useState("0");
+  const [editStatus, setEditStatus] = useState("active");
   const queryClient = useQueryClient();
 
   const { data: resources, isLoading } = useListResources(
@@ -73,6 +82,58 @@ export default function AdminResources() {
       queryClient.invalidateQueries({ queryKey: getListResourcesQueryKey({ search: search || undefined }) });
     } catch {
       toast.error("Failed to create resource");
+    }
+  };
+
+  const handleOpenEdit = (resource: any) => {
+    setEditingResource(resource);
+    setEditCategoryId(String(resource.category_id));
+    setEditManagerId(resource.manager_id ? String(resource.manager_id) : "none");
+    setEditDepartmentId(resource.department_id ? String(resource.department_id) : "none");
+    setEditApprovalSteps(resource.approval_steps === 2 ? "2" : resource.approval_steps === 1 ? "1" : "0");
+    setEditStatus(resource.status || "active");
+    setIsEditOpen(true);
+  };
+
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingResource) return;
+    const formData = new FormData(e.currentTarget);
+    try {
+      await customFetch(`/api/admin/resources/${editingResource.resource_id}`, {
+        method: "PATCH",
+        responseType: "json",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resource_name: (formData.get("resource_name") as string)?.trim(),
+          capacity: Number(formData.get("capacity")),
+          location: ((formData.get("location") as string) || "").trim() || null,
+          status: editStatus,
+          category_id: Number(editCategoryId),
+          manager_id: editManagerId === "none" ? null : Number(editManagerId),
+          department_id: editDepartmentId === "none" ? null : Number(editDepartmentId),
+          approval_steps_override: Number(editApprovalSteps),
+        }),
+      });
+      toast.success("Resource updated");
+      setIsEditOpen(false);
+      setEditingResource(null);
+      queryClient.invalidateQueries({ queryKey: getListResourcesQueryKey({ search: search || undefined }) });
+    } catch {
+      toast.error("Failed to update resource");
+    }
+  };
+
+  const handleRemove = async (resourceId: number) => {
+    try {
+      const resp = await customFetch<{ message: string }>(`/api/admin/resources/${resourceId}`, {
+        method: "DELETE",
+        responseType: "json",
+      });
+      toast.success(resp.message || "Resource updated");
+      queryClient.invalidateQueries({ queryKey: getListResourcesQueryKey({ search: search || undefined }) });
+    } catch {
+      toast.error("Failed to remove resource");
     }
   };
 
@@ -179,6 +240,7 @@ export default function AdminResources() {
                     <TableHead>Capacity</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Manager</TableHead>
+                    <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -211,11 +273,29 @@ export default function AdminResources() {
                       <TableCell>
                         {resource.manager_name || <span className="text-muted-foreground italic">None</span>}
                       </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => handleOpenEdit(resource)}>
+                              <Pencil className="mr-2 h-4 w-4" /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleRemove(resource.resource_id)}>
+                              <Trash2 className="mr-2 h-4 w-4" /> Remove
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {resources?.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         No resources found
                       </TableCell>
                     </TableRow>
@@ -226,6 +306,88 @@ export default function AdminResources() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Resource</DialogTitle>
+          </DialogHeader>
+          {editingResource ? (
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input name="resource_name" defaultValue={editingResource.resource_name} required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Capacity</Label>
+                  <Input name="capacity" type="number" min="1" defaultValue={editingResource.capacity} required />
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={editStatus} onValueChange={setEditStatus}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="maintenance">Maintenance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input name="location" defaultValue={editingResource.location || ""} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={editCategoryId} onValueChange={setEditCategoryId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {categories?.map((c) => (
+                        <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Approval Flow</Label>
+                  <Select value={editApprovalSteps} onValueChange={setEditApprovalSteps}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">0 steps</SelectItem>
+                      <SelectItem value="1">1 step</SelectItem>
+                      <SelectItem value="2">2 steps</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Manager</Label>
+                  <Select value={editManagerId} onValueChange={setEditManagerId}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {managers?.data?.map((u) => (
+                        <SelectItem key={u.user_id} value={String(u.user_id)}>{u.first_name} {u.last_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Department ID</Label>
+                  <Input value={editDepartmentId === "none" ? "" : editDepartmentId} onChange={(e) => setEditDepartmentId(e.target.value || "none")} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit">Save changes</Button>
+              </DialogFooter>
+            </form>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

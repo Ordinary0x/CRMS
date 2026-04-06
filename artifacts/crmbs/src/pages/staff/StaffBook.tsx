@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { useLocation } from "wouter";
 import { useGetResourceAvailability, useGetResource, useCreateBooking, getGetResourceAvailabilityQueryKey, getGetResourceQueryKey } from "@workspace/api-client-react";
@@ -40,6 +40,37 @@ export default function StaffBook() {
 
   const createBooking = useCreateBooking();
 
+  const requestedConflict = useMemo(
+    () => availability?.busy_slots?.some((slot) => slot.start_time < endTime && slot.end_time > startTime) ?? false,
+    [availability?.busy_slots, endTime, startTime],
+  );
+
+  const requestedDuration = useMemo(() => {
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = endTime.split(":").map(Number);
+    return Math.max(0, eh * 60 + em - (sh * 60 + sm));
+  }, [startTime, endTime]);
+
+  const nextSlots = useMemo(() => {
+    if (!availability?.free_slots || requestedDuration <= 0) return [] as Array<{ start_time: string; end_time: string }>;
+    return availability.free_slots
+      .map((slot) => {
+        const [sh, sm] = slot.start_time.split(":").map(Number);
+        const [eh, em] = slot.end_time.split(":").map(Number);
+        const freeDuration = eh * 60 + em - (sh * 60 + sm);
+        if (freeDuration < requestedDuration) return null;
+        const endMinutes = sh * 60 + sm + requestedDuration;
+        const h = Math.floor(endMinutes / 60);
+        const m = endMinutes % 60;
+        return {
+          start_time: slot.start_time,
+          end_time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+        };
+      })
+      .filter((item): item is { start_time: string; end_time: string } => item !== null)
+      .slice(0, 3);
+  }, [availability?.free_slots, requestedDuration]);
+
   const formatTime = (value: string) => {
     const [h, m] = value.split(":").map(Number);
     const suffix = h >= 12 ? "PM" : "AM";
@@ -54,7 +85,12 @@ export default function StaffBook() {
       if (!startTime || !endTime) { toast.error("Please specify start and end times"); return; }
       
       const availResult = await checkAvailability();
-      // Assume success for demo if it doesn't throw, ideally we'd validate against `availability` data here.
+      if (availResult.isError) {
+        const err: any = availResult.error;
+        const message = err?.data?.error || err?.message || "Failed to check availability";
+        toast.error(message);
+        return;
+      }
       setStep(2);
     } else if (step === 2) {
       setStep(3);
@@ -75,9 +111,15 @@ export default function StaffBook() {
       toast.success("Booking submitted successfully!");
       setLocation(`/${dbUser?.role === 'student' ? 'student' : 'staff'}/bookings`);
     } catch (error: any) {
-      if (error.response?.status === 409) {
-        toast.error("Time slot conflict detected. Please select an alternative time.");
-        // We'd parse alternatives here and show them
+      if (error?.status === 409) {
+        const apiData = error?.data as { message?: string; alternatives?: Array<{ start_time: string; end_time: string }> } | undefined;
+        const alternatives = apiData?.alternatives ?? [];
+        if (alternatives.length > 0) {
+          const hint = alternatives.map((a) => `${formatTime(a.start_time)}-${formatTime(a.end_time)}`).join(", ");
+          toast.error(`Time slot conflict. Try: ${hint}`);
+        } else {
+          toast.error("Time slot conflict detected. Please select an alternative time.");
+        }
       } else {
         toast.error("Failed to submit booking");
       }
@@ -189,7 +231,7 @@ export default function StaffBook() {
               <CardDescription>Review the requested time slot.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {availability?.busy_slots?.some((slot) => slot.start_time < endTime && slot.end_time > startTime) ? (
+              {requestedConflict ? (
                 <Alert className="bg-red-50 border-red-200 text-red-800">
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                   <AlertTitle>Conflict Detected</AlertTitle>
@@ -206,6 +248,33 @@ export default function StaffBook() {
                   </AlertDescription>
                 </Alert>
               )}
+
+              {requestedConflict && (
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+                  <h4 className="font-medium text-amber-900 mb-2">Next Available Suggestions</h4>
+                  {nextSlots.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {nextSlots.map((slot, idx) => (
+                        <Button
+                          key={`${slot.start_time}-${slot.end_time}`}
+                          type="button"
+                          variant="outline"
+                          className="border-amber-300 text-amber-900"
+                          onClick={() => {
+                            setStartTime(slot.start_time);
+                            setEndTime(slot.end_time);
+                            toast.success(`Updated to ${formatTime(slot.start_time)} - ${formatTime(slot.end_time)}`);
+                          }}
+                        >
+                          Option {idx + 1}: {formatTime(slot.start_time)} - {formatTime(slot.end_time)}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-amber-800">No slot with the same duration is currently available for this date.</p>
+                  )}
+                </div>
+              )}
               
               <div className="bg-muted p-4 rounded-md mt-4">
                 <h4 className="font-medium mb-2">Approval Requirements</h4>
@@ -220,10 +289,10 @@ export default function StaffBook() {
             </CardContent>
             <CardFooter className="flex justify-between border-t pt-6">
               <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
-              <Button
-                onClick={handleNextStep}
-                disabled={Boolean(availability?.busy_slots?.some((slot) => slot.start_time < endTime && slot.end_time > startTime))}
-              >
+                <Button
+                  onClick={handleNextStep}
+                  disabled={requestedConflict}
+                >
                 Review Booking <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
             </CardFooter>

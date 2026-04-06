@@ -287,9 +287,13 @@ router.get("/hod/dashboard", ...hodAuth, async (req, res): Promise<void> => {
 
   const client = await pool.connect();
   try {
-    const [users, pendingApprovals, bookingsToday, recentApprovals] = await Promise.all([
+    const [users, pendingApprovals, bookingsToday, recentApprovals, roleBreakdown, recentDepartmentActivity] = await Promise.all([
       client.query(
-        "SELECT COUNT(*)::INT as count FROM users WHERE department_id = $1 AND is_active = true",
+        `SELECT
+         COUNT(*)::INT as total,
+         COUNT(*) FILTER (WHERE is_active = true)::INT as active,
+         COUNT(*) FILTER (WHERE is_active = false)::INT as inactive
+         FROM users WHERE department_id = $1`,
         [deptId]
       ),
       client.query(
@@ -317,16 +321,42 @@ router.get("/hod/dashboard", ...hodAuth, async (req, res): Promise<void> => {
          JOIN users u ON u.user_id = b.user_id
          WHERE a.step_number = 2 AND a.decision IS NULL
            AND r.department_id = $1
-         ORDER BY b.created_at ASC LIMIT 5`,
+          ORDER BY b.created_at ASC LIMIT 5`,
+        [deptId]
+      ),
+      client.query(
+        `SELECT role,
+         COUNT(*) FILTER (WHERE is_active = true)::INT as active_count,
+         COUNT(*) FILTER (WHERE is_active = false)::INT as inactive_count
+         FROM users
+         WHERE department_id = $1
+         GROUP BY role
+         ORDER BY role`,
+        [deptId]
+      ),
+      client.query(
+        `SELECT b.booking_id, bs.status_name, r.resource_name, b.created_at,
+         CONCAT(u.first_name, ' ', u.last_name) as requested_by
+         FROM booking b
+         JOIN booking_status bs ON bs.status_id = b.status_id
+         JOIN resource r ON r.resource_id = b.resource_id
+         JOIN users u ON u.user_id = b.user_id
+         WHERE u.department_id = $1
+         ORDER BY b.created_at DESC
+         LIMIT 8`,
         [deptId]
       ),
     ]);
 
     res.json({
-      dept_users: users.rows[0].count,
+      dept_users: users.rows[0].active,
+      dept_users_total: users.rows[0].total,
+      dept_users_inactive: users.rows[0].inactive,
       pending_approvals: pendingApprovals.rows[0].count,
       bookings_today: bookingsToday.rows[0].count,
       recent_pending: recentApprovals.rows,
+      role_breakdown: roleBreakdown.rows,
+      recent_department_activity: recentDepartmentActivity.rows,
     });
   } finally {
     client.release();
