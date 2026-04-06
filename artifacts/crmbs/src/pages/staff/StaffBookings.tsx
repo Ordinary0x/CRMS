@@ -61,7 +61,9 @@ export default function StaffBookings() {
                 </TableHeader>
                 <TableBody>
                   {bookings.map((booking) => {
-                    const startAt = new Date(`${booking.date}T${booking.start_time}`);
+                    const bookingDatePart = String(booking.date).slice(0, 10);
+                    const bookingStartPart = String(booking.start_time).slice(0, 8);
+                    const startAt = new Date(`${bookingDatePart}T${bookingStartPart}`);
                     const canCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase()) && !Number.isNaN(startAt.getTime()) && startAt > new Date();
                     return (
                     <React.Fragment key={booking.booking_id}>

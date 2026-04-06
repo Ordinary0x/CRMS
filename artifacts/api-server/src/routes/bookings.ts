@@ -195,7 +195,9 @@ router.patch("/bookings/:id/cancel", verifyToken, async (req, res): Promise<void
       return;
     }
 
-    const startAt = new Date(`${b.date}T${b.start_time}`);
+    const bookingDatePart = String(b.date).slice(0, 10);
+    const bookingStartPart = String(b.start_time).slice(0, 8);
+    const startAt = new Date(`${bookingDatePart}T${bookingStartPart}`);
     if (Number.isNaN(startAt.getTime()) || startAt <= new Date()) {
       res.status(400).json({ error: "Cannot cancel a booking that has already started" });
       return;
