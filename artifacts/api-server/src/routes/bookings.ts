@@ -195,13 +195,9 @@ router.patch("/bookings/:id/cancel", verifyToken, async (req, res): Promise<void
       return;
     }
 
-    const tomorrow = new Date();
-    tomorrow.setHours(0, 0, 0, 0);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const bookingDate = new Date(`${b.date}T00:00:00Z`);
-    bookingDate.setHours(0, 0, 0, 0);
-    if (bookingDate < tomorrow) {
-      res.status(400).json({ error: "Cannot cancel a booking less than 1 day before start" });
+    const startAt = new Date(`${b.date}T${b.start_time}`);
+    if (Number.isNaN(startAt.getTime()) || startAt <= new Date()) {
+      res.status(400).json({ error: "Cannot cancel a booking that has already started" });
       return;
     }
 

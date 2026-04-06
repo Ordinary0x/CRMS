@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/shared/Badges";
 import { TableSkeleton } from "@/components/shared/StateUI";
-import { addDays, format, parseISO, startOfDay } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Ban, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
@@ -26,8 +26,6 @@ export default function StaffBookings() {
   const bookings = data || [];
 
   const cancelBooking = useCancelBooking();
-  const tomorrowStart = startOfDay(addDays(new Date(), 1));
-
   const handleCancel = async (id: number) => {
     try {
       await cancelBooking.mutateAsync({ id });
@@ -63,8 +61,8 @@ export default function StaffBookings() {
                 </TableHeader>
                 <TableBody>
                   {bookings.map((booking) => {
-                    const bookingDay = startOfDay(parseISO(booking.date));
-                    const canCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase()) && bookingDay >= tomorrowStart;
+                    const startAt = new Date(`${booking.date}T${booking.start_time}`);
+                    const canCancel = ["pending", "approved"].includes(booking.status_name.toLowerCase()) && !Number.isNaN(startAt.getTime()) && startAt > new Date();
                     return (
                     <React.Fragment key={booking.booking_id}>
                       <TableRow
