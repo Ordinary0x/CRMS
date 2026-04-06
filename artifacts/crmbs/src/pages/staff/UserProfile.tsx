@@ -1,12 +1,71 @@
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/providers/AuthProvider";
+import { customFetch } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { User, Mail, Building2, Shield } from "lucide-react";
+import { toast } from "sonner";
+
+type DepartmentOption = {
+  department_id: number;
+  dept_name: string;
+};
 
 export default function UserProfile() {
-  const { dbUser } = useAuth();
+  const { dbUser, refreshUser } = useAuth();
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [departmentId, setDepartmentId] = useState("none");
+  const [saving, setSaving] = useState(false);
 
   if (!dbUser) return null;
+
+  useEffect(() => {
+    const currentDepartment = dbUser.department_id;
+    setDepartmentId(currentDepartment ? String(currentDepartment) : "none");
+  }, [dbUser.department_id]);
+
+  useEffect(() => {
+    let active = true;
+
+    customFetch<DepartmentOption[]>("/api/auth/departments", {
+      responseType: "json",
+    })
+      .then((rows) => {
+        if (active) {
+          setDepartments(rows ?? []);
+        }
+      })
+      .catch(() => {
+        toast.error("Failed to load departments");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const onSaveDepartment = async () => {
+    setSaving(true);
+    try {
+      await customFetch("/api/auth/me", {
+        method: "PATCH",
+        responseType: "json",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          department_id: departmentId === "none" ? null : Number(departmentId),
+        }),
+      });
+      await refreshUser();
+      toast.success("Department updated");
+    } catch {
+      toast.error("Failed to update department");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -54,6 +113,30 @@ export default function UserProfile() {
             <div>
               <div className="text-xs text-muted-foreground">Status</div>
               <div className="font-medium">{dbUser.is_active ? "Active" : "Inactive"}</div>
+            </div>
+          </div>
+          <div className="rounded-md border p-4 md:col-span-2 space-y-3">
+            <div>
+              <Label>Department</Label>
+              <p className="text-xs text-muted-foreground mt-1">Students can select their department from here.</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Select value={departmentId} onValueChange={setDepartmentId}>
+                <SelectTrigger className="sm:max-w-md">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not assigned</SelectItem>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept.department_id} value={String(dept.department_id)}>
+                      {dept.dept_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" onClick={onSaveDepartment} disabled={saving}>
+                {saving ? "Saving..." : "Save Department"}
+              </Button>
             </div>
           </div>
         </CardContent>

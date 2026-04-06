@@ -194,4 +194,72 @@ router.get("/auth/me", verifyTokenAllowInactive, async (req, res): Promise<void>
   }
 });
 
+// GET /auth/departments — list available departments for profile setup
+router.get("/auth/departments", verifyTokenAllowInactive, async (_req, res): Promise<void> => {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT department_id, dept_name
+       FROM department
+       ORDER BY dept_name ASC`
+    );
+    res.json(result.rows);
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /auth/me — update current user's profile fields
+router.patch("/auth/me", verifyTokenAllowInactive, async (req, res): Promise<void> => {
+  const hasDepartmentId = Object.prototype.hasOwnProperty.call(req.body ?? {}, "department_id");
+
+  if (!hasDepartmentId) {
+    res.status(400).json({ error: "department_id is required" });
+    return;
+  }
+
+  const rawDepartmentId = req.body.department_id;
+  const departmentId = rawDepartmentId === null || rawDepartmentId === undefined ? null : Number(rawDepartmentId);
+
+  if (departmentId !== null && (!Number.isInteger(departmentId) || departmentId <= 0)) {
+    res.status(400).json({ error: "department_id must be a positive integer or null" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    if (departmentId !== null) {
+      const deptResult = await client.query(
+        "SELECT department_id FROM department WHERE department_id = $1",
+        [departmentId]
+      );
+
+      if (!deptResult.rows[0]) {
+        res.status(404).json({ error: "Department not found" });
+        return;
+      }
+    }
+
+    const result = await client.query(
+      `UPDATE users u
+       SET department_id = $1
+       WHERE u.user_id = $2
+       RETURNING u.user_id, u.firebase_uid, u.first_name, u.last_name, u.email,
+                 u.phone, u.role, u.is_active, u.priority_level, u.department_id,
+                 u.created_at,
+                 (SELECT dept_name FROM department WHERE department_id = u.department_id) as department_name`,
+      [departmentId, req.user!.user_id]
+    );
+
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

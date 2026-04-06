@@ -191,7 +191,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href={`/${roleBase}/profile`} className="cursor-pointer">Profile</Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">
+        <DropdownMenuItem
+          onClick={logout}
+          className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+        >
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>
