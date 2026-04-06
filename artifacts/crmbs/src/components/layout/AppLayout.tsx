@@ -169,9 +169,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const UserMenu = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-primary/10 text-primary">
+        <Button
+          variant="ghost"
+          className={`relative h-8 w-8 rounded-full ${
+            isSidebarLayout ? "" : "text-primary-foreground hover:bg-black/10"
+          }`}
+        >
+          <Avatar className={`h-8 w-8 ${isSidebarLayout ? "" : "border border-white/40"}`}>
+            <AvatarFallback className={isSidebarLayout ? "bg-primary/10 text-primary" : "bg-white/20 text-white"}>
               {dbUser.first_name[0]}{dbUser.last_name[0]}
             </AvatarFallback>
           </Avatar>
