@@ -1,151 +1,158 @@
-# Endpoint Verification Report (Local)
+# CRMBS Final Endpoint and Feature Verification Report
 
-Environment verified on local setup:
+This report captures final verification done after implementing bug fixes and requested improvements.
 
-- Frontend: `http://127.0.0.1:5173`
-- Backend: `http://127.0.0.1:5000`
+Environment used for verification:
+
+- API: `http://127.0.0.1:5000`
 - DB: PostgreSQL `127.0.0.1:5433`, database `crmbs`
 
-## Status Summary
-
-All core endpoint groups were verified with live requests and role-based tokens.
-
-## 1) Health
-
-- `GET /api/healthz` -> `200`
-
-## 2) Auth
-
-Verified for all seeded roles:
-
-- `POST /api/auth/login` -> `200`
-- `GET /api/auth/me` -> `200` for admin/hod/rm/faculty/student
-- `POST /api/auth/register` -> `201` (new user flow tested)
-
-Inactive behavior verified:
-
-- Inactive user can still access `/api/auth/me` (for pending page flow) -> `200`
-- Inactive user blocked from protected route (`/api/bookings`) -> `403`
-
-## 3) Admin Endpoints
+## 1) Authentication and Registration
 
 Verified:
 
-- `GET /api/admin/users` -> `200`
-- `PATCH /api/admin/users/:id/role` -> `200`
-- `DELETE /api/admin/users/:id` -> `200`
-- `GET /api/admin/departments` -> `200`
-- `POST /api/admin/departments` -> `201`
-- `PATCH /api/admin/departments/:id` -> `200`
-- `GET /api/admin/blackout` -> `200`
-- `POST /api/admin/blackout` -> `201`
-- `DELETE /api/admin/blackout/:id` -> `200`
-- `GET /api/admin/audit-log` -> `200`
-- `GET /api/admin/bookings` -> `200`
-- `PATCH /api/admin/bookings/:id/cancel` -> `200`
-- `GET /api/admin/dashboard` -> `200`
+- `POST /api/auth/login` works for admin/hod/rm/faculty/student and seeded department-specific HOD/RM users.
+- `POST /api/auth/register` now creates users as active by default with role `student`.
+- `GET /api/auth/me` works for active/inactive profile flow.
 
-## 4) HOD Endpoints
+Result:
+
+- Register returns `201`; `is_active = true` by default.
+
+## 2) Booking Conflict and Cancellation
 
 Verified:
 
-- `GET /api/hod/users` -> `200`
-- `PATCH /api/hod/users/:id/activate` -> `200`
-- `GET /api/hod/approvals/pending` -> `200`
-- `POST /api/hod/approvals/:id/decide` -> `200`
-- `GET /api/hod/bookings` -> `200`
-- `GET /api/hod/analytics` -> `200`
-- `GET /api/hod/dashboard` -> `200`
+- Student vs Student overlap booking: `409`
+- Faculty vs Student overlap booking: `409`
+- Pending bookings block same-slot inserts.
+- Cancel endpoint `PATCH /api/bookings/:id/cancel` works and updates status to `Cancelled`.
 
-Validation check:
+Result:
 
-- rejection without remarks -> `400` as expected
+- Conflict prevention is consistent in API and DB.
+- Cancel operation is functioning as expected.
 
-Department scope check:
-
-- HOD users endpoint returned no outside-department users.
-
-## 5) Resource Manager Endpoints
+## 3) Resource Approval Flow Behavior
 
 Verified:
 
-- `GET /api/rm/resources` -> `200`
-- `POST /api/rm/resources` -> `201`
-- `PATCH /api/rm/resources/:id` -> `200`
-- `PATCH /api/rm/resources/:id/status` -> `200`
-- `POST /api/rm/resources/:id/unavailability` -> `201`
-- `DELETE /api/rm/resources/:id/unavailability/:uid` -> `200`
-- `GET /api/rm/approvals/pending` -> `200`
-- `POST /api/rm/approvals/:id/decide` -> `200`
-- `GET /api/rm/analytics` -> `200`
-- `GET /api/rm/dashboard` -> `200`
+- Per-resource approval override support (0/1/2 steps) added.
+- CSE Smart Classroom configured to require 2-step path.
+- Admin-created resources can set explicit approval flow.
 
-Authorization check:
+Result:
 
-- non-RM trying RM unavailability endpoint -> `403`
+- Approval strategy is no longer category-only; resource-level policy works.
 
-## 6) Resources Endpoints
+## 4) Department-Specific HOD/RM Scoping
 
 Verified:
 
-- `GET /api/resources` -> `200`
-- `GET /api/resources/categories` -> `200`
-- `GET /api/resources/:id` -> `200`
-- `GET /api/resources/:id/availability?date=...` -> `200`
+- HOD users and approvals scoped by department.
+- ECE HOD no longer receives unrelated CSE step-2 approvals.
+- ECE end-to-end flow tested:
+  - ECE user booking
+  - ECE RM step-1 approve
+  - ECE HOD sees pending step-2
 
-Filtering check:
+Result:
 
-- category/capacity/search filters returned expected filtered records.
+- Multi-department flow (CSE/ECE/MECH) works.
 
-## 7) Bookings Endpoints
-
-Verified:
-
-- `POST /api/bookings` -> `201`
-- conflict create booking -> `409` with alternatives payload
-- `GET /api/bookings` -> `200`
-- `GET /api/bookings/:id` (owner) -> `200`
-- `GET /api/bookings/:id` (non-owner) -> `404`
-- `PATCH /api/bookings/:id/cancel` -> `200`
-
-## 8) Notifications Endpoints
+## 5) Admin Resource Management
 
 Verified:
 
-- `GET /api/notifications` -> `200`
-- `PATCH /api/notifications/:id/read` -> `200`
-- `PATCH /api/notifications/read-all` -> `200`
-- `GET /api/notifications/unread-count` -> `200`
-- backward alias `GET /api/notifications/count` -> `200`
+- Admin resource create endpoint added:
+  - `POST /api/admin/resources`
+- Admin resource update endpoint added:
+  - `PATCH /api/admin/resources/:id`
 
-Unread counter changed correctly after mark-read operations.
+Result:
 
-## 9) Analytics Endpoints
+- Admin can create resources directly and set manager/department/approval override.
+
+## 6) Inactive and Availability Visibility
 
 Verified:
 
-- `GET /api/analytics/utilization` -> `200` (admin/rm), `403` (student)
-- `GET /api/analytics/by-department` -> `200` (admin)
-- `GET /api/analytics/busiest-resources` -> `200`
-- `GET /api/analytics/approval-stats` -> `200`
+- RM can set owned resource inactive and still see it in RM list.
+- Inactive resources cannot be booked.
 
-## 10) Approval Flow Validation
+Result:
 
-Verified end-to-end:
+- Visibility and booking restrictions for inactive resources are correct.
 
-- step-1 RM approve for 1-step category -> booking moved to `Approved`
-- step-1 RM approve for 2-step category -> step-2 created, HOD sees pending
-- step-2 HOD approve -> booking `Approved`
-- RM reject path -> booking `Rejected`
-- HOD reject path -> booking `Rejected`
+## 7) Blackout Behavior
 
-## 11) Database-Level Conflict & Audit Checks
+Verified:
 
-Verified in DB:
+- Admin blackout create/delete works.
+- Booking during blackout returns `400` with proper message.
 
-- exclusion constraint `no_overlap` exists on `booking`
-- active overlap rows count in tested slot = `0`
-- direct conflicting insert raises exclusion constraint violation
-- audit rows exist for tracked tables
-- `audit_log` update/delete attempts affect 0 rows (immutable behavior)
+Result:
 
+- Blackout enforcement is functioning.
+
+## 8) Frontend UX/Navigation Fixes
+
+Implemented and validated by build/typecheck and endpoint flow:
+
+- Logout now forces redirect to `/login`.
+- Profile page added for staff/student/faculty.
+- Profile access entry added in user menu.
+- Not-found refresh mitigation:
+  - SPA fallback support file `_redirects` added for static hosts.
+  - fallback route redirects authenticated users to role dashboard.
+- Staff booking step now blocks progression on detected conflicts.
+- Inactive state shown in search cards.
+- 12-hour time display applied in booking UI paths.
+
+## 9) Analytics and Notifications
+
+Previously verified endpoints remain operational:
+
+- utilization/by-department/busiest-resources/approval-stats role scoped
+- notifications list/read/read-all/unread-count
+
+## 10) Final API Smoke Status (Critical Flows)
+
+Critical paths verified with live calls:
+
+- health: `200`
+- auth login/register/me: `200/201`
+- booking create conflict: `409`
+- booking cancel: `200`
+- admin resource create: `201`
+- hod approvals pending (dept scope): correct
+- blackout block booking: `400`
+- inactive resource booking attempt: `400`
+
+### Targeted final regression rerun (2026-04-06)
+
+A targeted regression script was executed against a fresh backend instance on `http://127.0.0.1:5050/api` covering:
+
+- auth (admin/rm/hod/faculty/student login + `/auth/me`)
+- booking conflict and cancellation
+- admin resource CRUD (create/update/read/reactivate)
+- approval flow (student create -> RM step-1 approve -> HOD step-2 approve -> final Approved)
+
+Result:
+
+- `25/25` checks passed.
+
+Fixes applied during this rerun:
+
+- `POST /bookings` now reports effective approval steps using `COALESCE(resource.approval_steps_override, category.approval_steps)`.
+- RM step-1 decision flow now uses effective approval steps, so two-step resources correctly route to HOD pending queue.
+
+## 11) Deployment Routing Note
+
+For static hosting, ensure SPA rewrite is configured:
+
+- source: `/*`
+- destination: `/index.html`
+- action: `Rewrite`
+
+Without rewrite, refresh on nested routes can show 404/not-found.

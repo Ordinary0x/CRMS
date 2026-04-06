@@ -40,6 +40,13 @@ export default function StaffBook() {
 
   const createBooking = useCreateBooking();
 
+  const formatTime = (value: string) => {
+    const [h, m] = value.split(":").map(Number);
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour12 = ((h + 11) % 12) + 1;
+    return `${hour12}:${String(m).padStart(2, "0")} ${suffix}`;
+  };
+
   const handleNextStep = async () => {
     if (step === 1) {
       if (!resourceId) { toast.error("Please enter a resource ID"); return; }
@@ -182,13 +189,23 @@ export default function StaffBook() {
               <CardDescription>Review the requested time slot.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Alert className="bg-green-50 border-green-200 text-green-800">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <AlertTitle>Slot Available</AlertTitle>
-                <AlertDescription>
-                  The requested time slot ({startTime} - {endTime} on {date && format(date, 'MMM d, yyyy')}) is available for {resource?.resource_name || `Resource #${resourceId}`}.
-                </AlertDescription>
-              </Alert>
+              {availability?.busy_slots?.some((slot) => slot.start_time < endTime && slot.end_time > startTime) ? (
+                <Alert className="bg-red-50 border-red-200 text-red-800">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                  <AlertTitle>Conflict Detected</AlertTitle>
+                  <AlertDescription>
+                    The selected slot conflicts with an existing pending/approved request.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert className="bg-green-50 border-green-200 text-green-800">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertTitle>Slot Available</AlertTitle>
+                  <AlertDescription>
+                    The requested time slot ({formatTime(startTime)} - {formatTime(endTime)} on {date && format(date, 'MMM d, yyyy')}) is available for {resource?.resource_name || `Resource #${resourceId}`}.
+                  </AlertDescription>
+                </Alert>
+              )}
               
               <div className="bg-muted p-4 rounded-md mt-4">
                 <h4 className="font-medium mb-2">Approval Requirements</h4>
@@ -203,7 +220,12 @@ export default function StaffBook() {
             </CardContent>
             <CardFooter className="flex justify-between border-t pt-6">
               <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
-              <Button onClick={handleNextStep}>Review Booking <ArrowRight className="ml-2 w-4 h-4" /></Button>
+              <Button
+                onClick={handleNextStep}
+                disabled={Boolean(availability?.busy_slots?.some((slot) => slot.start_time < endTime && slot.end_time > startTime))}
+              >
+                Review Booking <ArrowRight className="ml-2 w-4 h-4" />
+              </Button>
             </CardFooter>
           </>
         )}
@@ -226,7 +248,7 @@ export default function StaffBook() {
                 </div>
                 <div className="sm:col-span-1">
                   <dt className="text-sm font-medium text-muted-foreground">Time</dt>
-                  <dd className="mt-1 text-sm text-foreground font-semibold">{startTime} to {endTime}</dd>
+                  <dd className="mt-1 text-sm text-foreground font-semibold">{formatTime(startTime)} to {formatTime(endTime)}</dd>
                 </div>
                 <div className="sm:col-span-1">
                   <dt className="text-sm font-medium text-muted-foreground">Purpose</dt>

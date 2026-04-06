@@ -71,10 +71,10 @@ router.post("/auth/register", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!password && !firebase_uid) {
-    res.status(400).json({ error: "Password is required" });
-    return;
-  }
+    if (!password && !firebase_uid) {
+      res.status(400).json({ error: "Password is required" });
+      return;
+    }
 
   const client = await pool.connect();
   try {
@@ -146,7 +146,7 @@ router.post("/auth/register", async (req, res): Promise<void> => {
 
     const result = await client.query(
       `INSERT INTO users(firebase_uid, first_name, last_name, email, role, is_active, priority_level, password_hash)
-       VALUES ($1, $2, $3, $4, 'student', false, 4, $5)
+       VALUES ($1, $2, $3, $4, 'student', true, 4, $5)
        RETURNING user_id, role, is_active`,
       [uid, first_name, last_name, email, password_hash]
     );

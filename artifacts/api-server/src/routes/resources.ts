@@ -37,8 +37,8 @@ router.get("/resources", verifyToken, async (req, res): Promise<void> => {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const result = await client.query(
-      `SELECT r.*, rc.category_name, rc.approval_steps,
-       CONCAT(u.first_name, ' ', u.last_name) as manager_name
+       `SELECT r.*, rc.category_name, COALESCE(r.approval_steps_override, rc.approval_steps) AS approval_steps,
+        CONCAT(u.first_name, ' ', u.last_name) as manager_name
        FROM resource r
        JOIN resource_category rc ON rc.category_id = r.category_id
        LEFT JOIN users u ON u.user_id = r.manager_id
@@ -79,8 +79,8 @@ router.get("/resources/:id", verifyToken, async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT r.*, rc.category_name, rc.approval_steps,
-       CONCAT(u.first_name, ' ', u.last_name) as manager_name,
+       `SELECT r.*, rc.category_name, COALESCE(r.approval_steps_override, rc.approval_steps) AS approval_steps,
+        CONCAT(u.first_name, ' ', u.last_name) as manager_name,
        d.dept_name as department_name,
        COALESCE(
          (SELECT json_agg(json_build_object(

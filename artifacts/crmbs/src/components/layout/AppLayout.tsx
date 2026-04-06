@@ -69,6 +69,8 @@ const roleNavItems: Record<string, NavItem[]> = {
   ],
 };
 
+const roleBaseFromRole = (role: string) => (role === "faculty" ? "staff" : role);
+
 function NotificationBell() {
   const { dbUser } = useAuth();
   const queryClient = useQueryClient();
@@ -162,6 +164,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = roleNavItems[dbUser.role] || [];
   const isSidebarLayout = ['admin', 'hod', 'resource_manager'].includes(dbUser.role);
 
+  const roleBase = roleBaseFromRole(dbUser.role);
+
   const UserMenu = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -173,7 +177,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuContent className="w-56" align="end" forceMount>
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{dbUser.first_name} {dbUser.last_name}</p>
@@ -182,6 +186,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {dbUser.department_name && <div className="text-xs text-muted-foreground">{dbUser.department_name}</div>}
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href={`/${roleBase}/profile`} className="cursor-pointer">Profile</Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />

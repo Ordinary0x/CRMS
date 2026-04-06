@@ -97,6 +97,8 @@ export default function StaffSearch() {
                   <Badge variant="secondary" className="mb-2">{resource.category_name}</Badge>
                   {resource.status === 'active' ? (
                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Available</Badge>
+                  ) : resource.status === 'inactive' ? (
+                    <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-200">Inactive</Badge>
                   ) : (
                     <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Maintenance</Badge>
                   )}

@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -42,6 +43,7 @@ import StaffSearch from "@/pages/staff/StaffSearch";
 import StaffBook from "@/pages/staff/StaffBook";
 import StaffBookings from "@/pages/staff/StaffBookings";
 import StaffNotifications from "@/pages/staff/StaffNotifications";
+import UserProfile from "@/pages/staff/UserProfile";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +60,26 @@ function RootRedirect() {
   }
   
   return null;
+}
+
+function RedirectNotFoundToDashboard() {
+  const { dbUser, token, loading } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!token) {
+      setLocation("/login");
+      return;
+    }
+    if (!dbUser) return;
+    if (location === "/" || location === "/not-found") return;
+
+    const rolePrefix = dbUser.role === "resource_manager" ? "rm" : dbUser.role === "faculty" ? "staff" : dbUser.role;
+    setLocation(`/${rolePrefix}/dashboard`);
+  }, [loading, token, dbUser, location, setLocation]);
+
+  return <NotFound />;
 }
 
 function Router() {
@@ -128,6 +150,7 @@ function Router() {
               <Route path="/staff/book" component={StaffBook} />
               <Route path="/staff/bookings" component={StaffBookings} />
               <Route path="/staff/notifications" component={StaffNotifications} />
+              <Route path="/staff/profile" component={UserProfile} />
             </Switch>
           </AppLayout>
         </ProtectedRoute>
@@ -143,12 +166,13 @@ function Router() {
               <Route path="/student/book" component={StaffBook} />
               <Route path="/student/bookings" component={StaffBookings} />
               <Route path="/student/notifications" component={StaffNotifications} />
+              <Route path="/student/profile" component={UserProfile} />
             </Switch>
           </AppLayout>
         </ProtectedRoute>
       </Route>
 
-      <Route component={NotFound} />
+      <Route component={RedirectNotFoundToDashboard} />
     </Switch>
   );
 }

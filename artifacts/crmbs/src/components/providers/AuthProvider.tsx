@@ -83,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut(auth).finally(() => {
       setToken(null);
       setDbUser(null);
+      window.location.assign("/login");
     });
   };
 

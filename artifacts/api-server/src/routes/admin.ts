@@ -76,6 +76,12 @@ router.patch("/admin/users/:id/role", ...adminAuth, async (req, res): Promise<vo
     return;
   }
 
+  const allowedRoles = ["admin", "hod", "resource_manager", "staff", "faculty", "student"];
+  if (!allowedRoles.includes(role)) {
+    res.status(400).json({ error: "Invalid role" });
+    return;
+  }
+
   const priority_level = priorityForRole(role);
   const hasDepartmentId = Object.prototype.hasOwnProperty.call(req.body, "department_id");
   const client = await pool.connect();
@@ -373,6 +379,142 @@ router.patch("/admin/bookings/:id/cancel", ...adminAuth, async (req, res): Promi
       [cancelStatus.rows[0].status_id, id]
     );
     res.json({ message: "Booking cancelled" });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /admin/resources (admin can create resources)
+router.post("/admin/resources", ...adminAuth, async (req, res): Promise<void> => {
+  const {
+    resource_name,
+    capacity,
+    location,
+    status = "active",
+    features = {},
+    category_id,
+    manager_id,
+    department_id,
+    approval_steps_override,
+  } = req.body;
+
+  if (!resource_name || !capacity || !category_id) {
+    res.status(400).json({ error: "resource_name, capacity, and category_id are required" });
+    return;
+  }
+
+  if (approval_steps_override !== undefined && ![0, 1, 2, null].includes(approval_steps_override)) {
+    res.status(400).json({ error: "approval_steps_override must be 0, 1, or 2" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `INSERT INTO resource(resource_name, capacity, location, status, features, approval_steps_override, category_id, manager_id, department_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING *`,
+      [
+        resource_name,
+        capacity,
+        location ?? null,
+        status,
+        JSON.stringify({ ...features, approval_steps_override: undefined }),
+        approval_steps_override ?? null,
+        category_id,
+        manager_id ?? null,
+        department_id ?? null,
+      ]
+    );
+
+    const resource = result.rows[0];
+    const catResult = await client.query(
+      "SELECT category_name, approval_steps FROM resource_category WHERE category_id = $1",
+      [resource.category_id]
+    );
+    resource.category_name = catResult.rows[0]?.category_name;
+    resource.approval_steps = resource.approval_steps_override ?? catResult.rows[0]?.approval_steps;
+
+    if (resource.manager_id) {
+      const managerResult = await client.query(
+        "SELECT CONCAT(first_name, ' ', last_name) AS manager_name FROM users WHERE user_id = $1",
+        [resource.manager_id]
+      );
+      resource.manager_name = managerResult.rows[0]?.manager_name ?? null;
+    } else {
+      resource.manager_name = null;
+    }
+
+    res.status(201).json(resource);
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /admin/resources/:id (admin can edit resources)
+router.patch("/admin/resources/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  const {
+    resource_name,
+    capacity,
+    location,
+    status,
+    features,
+    category_id,
+    manager_id,
+    department_id,
+    approval_steps_override,
+  } = req.body;
+
+  if (approval_steps_override !== undefined && ![0, 1, 2, null].includes(approval_steps_override)) {
+    res.status(400).json({ error: "approval_steps_override must be 0, 1, or 2" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `UPDATE resource SET
+       resource_name = COALESCE($1, resource_name),
+       capacity = COALESCE($2, capacity),
+       location = COALESCE($3, location),
+       status = COALESCE($4, status),
+       features = COALESCE($5, features),
+       category_id = COALESCE($6, category_id),
+       manager_id = COALESCE($7, manager_id),
+       department_id = COALESCE($8, department_id),
+       approval_steps_override = CASE WHEN $9::INT IS NULL THEN approval_steps_override ELSE $9 END
+       WHERE resource_id = $10
+       RETURNING *`,
+      [
+        resource_name,
+        capacity,
+        location,
+        status,
+        features ? JSON.stringify({ ...features, approval_steps_override: undefined }) : null,
+        category_id,
+        manager_id,
+        department_id,
+        approval_steps_override ?? null,
+        id,
+      ]
+    );
+
+    if (!result.rows[0]) {
+      res.status(404).json({ error: "Resource not found" });
+      return;
+    }
+
+    const resource = result.rows[0];
+    const catResult = await client.query(
+      "SELECT category_name, approval_steps FROM resource_category WHERE category_id = $1",
+      [resource.category_id]
+    );
+    resource.category_name = catResult.rows[0]?.category_name;
+    resource.approval_steps = resource.approval_steps_override ?? catResult.rows[0]?.approval_steps;
+
+    res.json(resource);
   } finally {
     client.release();
   }

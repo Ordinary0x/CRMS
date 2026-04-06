@@ -19,6 +19,7 @@ export default function RmResources() {
   const [features, setFeatures] = useState<string[]>([]);
   const [featureInput, setFeatureInput] = useState("");
   const [createCategoryId, setCreateCategoryId] = useState("");
+  const [createApprovalSteps, setCreateApprovalSteps] = useState("inherit");
   
   const queryClient = useQueryClient();
 
@@ -59,6 +60,7 @@ export default function RmResources() {
     
     // Transform features array into object map { "projector": true, "wifi": true }
     const featuresObj = features.reduce((acc, curr) => ({ ...acc, [curr.toLowerCase().replace(/ /g, '_')]: true }), {});
+    const approval_steps_override = createApprovalSteps === "inherit" ? undefined : Number(createApprovalSteps);
 
     try {
       await createResource.mutateAsync({
@@ -67,7 +69,10 @@ export default function RmResources() {
           capacity, 
           location: location || null, 
           category_id,
-          features: featuresObj
+          features: {
+            ...featuresObj,
+            approval_steps_override: approval_steps_override ?? null,
+          },
         }
       });
       toast.success("Resource created successfully");
@@ -99,7 +104,7 @@ export default function RmResources() {
         
         <Dialog open={isCreateOpen} onOpenChange={(open) => {
           setIsCreateOpen(open);
-          if (!open) { setFeatures([]); setFeatureInput(""); setCreateCategoryId(""); }
+          if (!open) { setFeatures([]); setFeatureInput(""); setCreateCategoryId(""); setCreateApprovalSteps("inherit"); }
         }}>
           <DialogTrigger asChild>
             <Button>
@@ -140,6 +145,20 @@ export default function RmResources() {
               <div className="space-y-2">
                 <Label>Location</Label>
                 <Input name="location" placeholder="Building/Room number" />
+              </div>
+              <div className="space-y-2">
+                <Label>Approval Flow</Label>
+                <Select value={createApprovalSteps} onValueChange={setCreateApprovalSteps}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Inherit category default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Inherit category default</SelectItem>
+                    <SelectItem value="0">0 steps (auto-approve)</SelectItem>
+                    <SelectItem value="1">1 step (RM)</SelectItem>
+                    <SelectItem value="2">2 steps (RM + HOD)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Features (Tags)</Label>
@@ -200,9 +219,12 @@ export default function RmResources() {
                         <div className="flex items-center"><MapPin className="h-3 w-3 mr-2" /> {resource.location || 'N/A'}</div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <StatusBadge status={resource.status} />
-                    </TableCell>
+                      <TableCell>
+                        <StatusBadge status={resource.status} />
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Approval: {resource.approval_steps === 2 ? "2-step" : resource.approval_steps === 1 ? "1-step" : "Auto"}
+                        </div>
+                      </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

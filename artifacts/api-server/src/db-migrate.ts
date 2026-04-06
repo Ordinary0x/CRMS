@@ -31,7 +31,7 @@ export async function runMigrations() {
         phone          VARCHAR(20),
         role           VARCHAR(30)  NOT NULL DEFAULT 'student'
                          CHECK (role IN ('admin','hod','resource_manager','staff','faculty','student')),
-        is_active      BOOLEAN      NOT NULL DEFAULT FALSE,
+        is_active      BOOLEAN      NOT NULL DEFAULT TRUE,
         priority_level SMALLINT     NOT NULL DEFAULT 4,
         department_id  INT REFERENCES department(department_id) ON DELETE SET NULL,
         created_at     TIMESTAMPTZ  DEFAULT now()
@@ -41,6 +41,10 @@ export async function runMigrations() {
     // Add password_hash column if not exists
     await client.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT
+    `);
+
+    await client.query(`
+      ALTER TABLE users ALTER COLUMN is_active SET DEFAULT TRUE
     `);
 
     // Add FK back to department (safe if already exists)
@@ -73,10 +77,16 @@ export async function runMigrations() {
         status        VARCHAR(20)  NOT NULL DEFAULT 'active'
                         CHECK (status IN ('active','inactive','maintenance')),
         features      JSONB        NOT NULL DEFAULT '{}',
+        approval_steps_override SMALLINT CHECK (approval_steps_override IN (0,1,2)),
         category_id   INT          NOT NULL REFERENCES resource_category(category_id),
         manager_id    INT          REFERENCES users(user_id) ON DELETE SET NULL,
         department_id INT          REFERENCES department(department_id) ON DELETE SET NULL
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE resource ADD COLUMN IF NOT EXISTS approval_steps_override SMALLINT
+        CHECK (approval_steps_override IN (0,1,2))
     `);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_resource_category ON resource(category_id)`);
@@ -372,11 +382,19 @@ export async function runMigrations() {
           RAISE EXCEPTION 'start_time must be before end_time';
         END IF;
 
-        SELECT rc.advance_days, rc.approval_steps
+        SELECT rc.advance_days, COALESCE(r.approval_steps_override, rc.approval_steps)
           INTO v_adv_days, v_approval_steps
         FROM resource r
         JOIN resource_category rc ON rc.category_id = r.category_id
         WHERE r.resource_id = p_resource_id;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM resource r
+          WHERE r.resource_id = p_resource_id
+            AND r.status = 'active'
+        ) THEN
+          RAISE EXCEPTION 'Resource is not active for booking';
+        END IF;
 
         IF p_date > CURRENT_DATE + v_adv_days THEN
           RAISE EXCEPTION 'Booking date exceeds advance window of % days', v_adv_days;
@@ -407,10 +425,7 @@ export async function runMigrations() {
         FROM booking
         WHERE resource_id = p_resource_id
           AND date        = p_date
-          AND status_id   IN (
-            SELECT status_id FROM booking_status
-            WHERE status_name IN ('Pending','Approved')
-          )
+          AND is_slot_blocking = TRUE
           AND start_time  < p_end
           AND end_time    > p_start;
 
@@ -492,8 +507,28 @@ export async function runMigrations() {
           '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
         ),
         (
+          'seed-hod-ece', 'ECE', 'HOD', 'hod.ece@nitc.ac.in', 'hod', true,
+          2, (SELECT department_id FROM department WHERE dept_name = 'Electronics and Communication' LIMIT 1),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-hod-mech', 'Mech', 'HOD', 'hod.mech@nitc.ac.in', 'hod', true,
+          2, (SELECT department_id FROM department WHERE dept_name = 'Mechanical Engineering' LIMIT 1),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
           'seed-rm-cse', 'CSE', 'Resource Manager', 'rm.cse@nitc.ac.in', 'resource_manager', true,
           2, (SELECT department_id FROM cse),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-rm-ece', 'ECE', 'Resource Manager', 'rm.ece@nitc.ac.in', 'resource_manager', true,
+          2, (SELECT department_id FROM department WHERE dept_name = 'Electronics and Communication' LIMIT 1),
+          '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
+        ),
+        (
+          'seed-rm-mech', 'Mech', 'Resource Manager', 'rm.mech@nitc.ac.in', 'resource_manager', true,
+          2, (SELECT department_id FROM department WHERE dept_name = 'Mechanical Engineering' LIMIT 1),
           '$2y$10$R0/33NzgymTyZKf0OWpyg.gJSRa27YlG4TfJCSOqDAiC.ycRSTgpq'
         ),
         (
@@ -524,6 +559,22 @@ export async function runMigrations() {
       FROM users u
       WHERE d.dept_name = 'Computer Science and Engineering'
         AND u.email = 'hod.cse@nitc.ac.in'
+    `);
+
+    await client.query(`
+      UPDATE department d
+      SET hod_id = u.user_id
+      FROM users u
+      WHERE d.dept_name = 'Electronics and Communication'
+        AND u.email = 'hod.ece@nitc.ac.in'
+    `);
+
+    await client.query(`
+      UPDATE department d
+      SET hod_id = u.user_id
+      FROM users u
+      WHERE d.dept_name = 'Mechanical Engineering'
+        AND u.email = 'hod.mech@nitc.ac.in'
     `);
 
     // Seed sample resources for RM flows
@@ -562,16 +613,55 @@ export async function runMigrations() {
     await client.query(`
       INSERT INTO resource(
         resource_name, capacity, location, status, features,
-        category_id, manager_id, department_id
+        approval_steps_override, category_id, manager_id, department_id
       )
       SELECT
         'CSE Smart Classroom', 80, 'LHC Block - CR4', 'active',
         '{"projector": true, "smart_board": true, "ac": true}'::jsonb,
+        2,
         (SELECT category_id FROM resource_category WHERE category_name = 'Classroom' LIMIT 1),
         (SELECT user_id FROM users WHERE email = 'rm.cse@nitc.ac.in' LIMIT 1),
         (SELECT department_id FROM department WHERE dept_name = 'Computer Science and Engineering' LIMIT 1)
       WHERE NOT EXISTS (
         SELECT 1 FROM resource WHERE resource_name = 'CSE Smart Classroom'
+      )
+    `);
+
+    await client.query(`
+      UPDATE resource
+      SET approval_steps_override = 2
+      WHERE resource_name = 'CSE Smart Classroom'
+    `);
+
+    await client.query(`
+      INSERT INTO resource(
+        resource_name, capacity, location, status, features,
+        category_id, manager_id, department_id
+      )
+      SELECT
+        'ECE Seminar Hall', 140, 'ECE Block - SH1', 'active',
+        '{"projector": true, "ac": true}'::jsonb,
+        (SELECT category_id FROM resource_category WHERE category_name = 'Seminar Hall' LIMIT 1),
+        (SELECT user_id FROM users WHERE email = 'rm.ece@nitc.ac.in' LIMIT 1),
+        (SELECT department_id FROM department WHERE dept_name = 'Electronics and Communication' LIMIT 1)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM resource WHERE resource_name = 'ECE Seminar Hall'
+      )
+    `);
+
+    await client.query(`
+      INSERT INTO resource(
+        resource_name, capacity, location, status, features,
+        category_id, manager_id, department_id
+      )
+      SELECT
+        'MECH CAD Lab', 70, 'Mech Block - Lab 1', 'active',
+        '{"workstations": true, "projector": true}'::jsonb,
+        (SELECT category_id FROM resource_category WHERE category_name = 'Laboratory' LIMIT 1),
+        (SELECT user_id FROM users WHERE email = 'rm.mech@nitc.ac.in' LIMIT 1),
+        (SELECT department_id FROM department WHERE dept_name = 'Mechanical Engineering' LIMIT 1)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM resource WHERE resource_name = 'MECH CAD Lab'
       )
     `);
 

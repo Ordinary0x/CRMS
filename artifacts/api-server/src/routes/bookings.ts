@@ -48,7 +48,7 @@ router.post("/bookings", verifyToken, async (req, res): Promise<void> => {
 
     // Get booking status and approval steps
     const bookingResult = await client.query(
-      `SELECT bs.status_name, rc.approval_steps
+      `SELECT bs.status_name, COALESCE(r.approval_steps_override, rc.approval_steps) AS approval_steps
        FROM booking b
        JOIN booking_status bs ON bs.status_id = b.status_id
        JOIN resource r ON r.resource_id = b.resource_id
@@ -198,7 +198,7 @@ router.patch("/bookings/:id/cancel", verifyToken, async (req, res): Promise<void
     const tomorrow = new Date();
     tomorrow.setHours(0, 0, 0, 0);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const bookingDate = new Date(b.date);
+    const bookingDate = new Date(`${b.date}T00:00:00Z`);
     bookingDate.setHours(0, 0, 0, 0);
     if (bookingDate < tomorrow) {
       res.status(400).json({ error: "Cannot cancel a booking less than 1 day before start" });

@@ -26,6 +26,9 @@ export default function StaffBookings() {
   const bookings = data || [];
 
   const cancelBooking = useCancelBooking();
+  const tomorrowStart = new Date();
+  tomorrowStart.setHours(0, 0, 0, 0);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
 
   const handleCancel = async (id: number) => {
     try {
@@ -75,16 +78,16 @@ export default function StaffBookings() {
                         <TableCell>
                           <div className="flex flex-col">
                             <span className="font-medium text-foreground">{format(new Date(booking.date), 'MMM d, yyyy')}</span>
-                            <span className="text-xs text-muted-foreground flex items-center mt-1">
-                              <Clock className="w-3 h-3 mr-1" /> {booking.start_time} - {booking.end_time}
-                            </span>
+                              <span className="text-xs text-muted-foreground flex items-center mt-1">
+                               <Clock className="w-3 h-3 mr-1" /> {formatTime(booking.start_time)} - {formatTime(booking.end_time)}
+                              </span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={booking.status_name} />
                         </TableCell>
                         <TableCell>
-                          {['pending', 'approved'].includes(booking.status_name.toLowerCase()) && (
+                          {['pending', 'approved'].includes(booking.status_name.toLowerCase()) && new Date(booking.date) >= tomorrowStart && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={(e) => e.stopPropagation()}>
@@ -185,3 +188,9 @@ export default function StaffBookings() {
     </div>
   );
 }
+  const formatTime = (value: string) => {
+    const [h, m] = value.split(":").map(Number);
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour12 = ((h + 11) % 12) + 1;
+    return `${hour12}:${String(m).padStart(2, "0")} ${suffix}`;
+  };

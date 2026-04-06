@@ -42,18 +42,51 @@ router.get("/rm/resources", ...rmAuth, async (req, res): Promise<void> => {
 
 // POST /rm/resources
 router.post("/rm/resources", ...rmAuth, async (req, res): Promise<void> => {
-  const { resource_name, capacity, location, status = "active", features = {}, category_id, department_id } = req.body;
+  const {
+    resource_name,
+    capacity,
+    location,
+    status = "active",
+    features = {},
+    category_id,
+    department_id,
+    approval_steps_override: explicitApprovalOverride,
+  } = req.body;
+  const approval_steps_override = explicitApprovalOverride ?? features?.approval_steps_override;
   if (!resource_name || !capacity || !category_id) {
     res.status(400).json({ error: "resource_name, capacity, and category_id are required" });
     return;
   }
+
+  if (approval_steps_override !== undefined && ![0, 1, 2].includes(Number(approval_steps_override))) {
+    res.status(400).json({ error: "approval_steps_override must be 0, 1, or 2" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
+    const managerDeptId = req.user!.department_id;
+    if (!managerDeptId) {
+      res.status(400).json({ error: "Resource Manager department is not configured" });
+      return;
+    }
+
+    const effectiveDepartmentId = department_id ?? managerDeptId;
     const result = await client.query(
-      `INSERT INTO resource(resource_name, capacity, location, status, features, category_id, manager_id, department_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO resource(resource_name, capacity, location, status, features, approval_steps_override, category_id, manager_id, department_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [resource_name, capacity, location ?? null, status, JSON.stringify(features), category_id, req.user!.user_id, department_id ?? null]
+      [
+        resource_name,
+        capacity,
+        location ?? null,
+        status,
+        JSON.stringify({ ...features, approval_steps_override: undefined }),
+        approval_steps_override ?? null,
+        category_id,
+        req.user!.user_id,
+        effectiveDepartmentId,
+      ]
     );
     const resource = result.rows[0];
     const catResult = await client.query(
@@ -61,7 +94,7 @@ router.post("/rm/resources", ...rmAuth, async (req, res): Promise<void> => {
       [category_id]
     );
     resource.category_name = catResult.rows[0]?.category_name;
-    resource.approval_steps = catResult.rows[0]?.approval_steps;
+    resource.approval_steps = resource.approval_steps_override ?? catResult.rows[0]?.approval_steps;
     resource.manager_name = `${req.user!.first_name} ${req.user!.last_name}`;
     resource.unavailability = [];
     res.status(201).json(resource);
@@ -74,7 +107,23 @@ router.post("/rm/resources", ...rmAuth, async (req, res): Promise<void> => {
 router.patch("/rm/resources/:id", ...rmAuth, async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(rawId, 10);
-  const { resource_name, capacity, location, status, features, category_id, department_id } = req.body;
+  const {
+    resource_name,
+    capacity,
+    location,
+    status,
+    features,
+    category_id,
+    department_id,
+    approval_steps_override: explicitApprovalOverride,
+  } = req.body;
+  const approval_steps_override = explicitApprovalOverride ?? features?.approval_steps_override;
+
+  if (approval_steps_override !== undefined && ![0, 1, 2, null].includes(approval_steps_override)) {
+    res.status(400).json({ error: "approval_steps_override must be 0, 1, or 2" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     const check = await client.query(
@@ -94,10 +143,21 @@ router.patch("/rm/resources/:id", ...rmAuth, async (req, res): Promise<void> => 
        status = COALESCE($4, status),
        features = COALESCE($5, features),
        category_id = COALESCE($6, category_id),
-       department_id = COALESCE($7, department_id)
-       WHERE resource_id = $8
+       department_id = COALESCE($7, department_id),
+       approval_steps_override = CASE WHEN $8::INT IS NULL THEN approval_steps_override ELSE $8 END
+       WHERE resource_id = $9
        RETURNING *`,
-      [resource_name, capacity, location, status, features ? JSON.stringify(features) : null, category_id, department_id, id]
+      [
+        resource_name,
+        capacity,
+        location,
+        status,
+        features ? JSON.stringify({ ...features, approval_steps_override: undefined }) : null,
+        category_id,
+        department_id,
+        approval_steps_override ?? null,
+        id,
+      ]
     );
     const resource = result.rows[0];
     const catResult = await client.query(
@@ -105,7 +165,7 @@ router.patch("/rm/resources/:id", ...rmAuth, async (req, res): Promise<void> => 
       [resource.category_id]
     );
     resource.category_name = catResult.rows[0]?.category_name;
-    resource.approval_steps = catResult.rows[0]?.approval_steps;
+    resource.approval_steps = resource.approval_steps_override ?? catResult.rows[0]?.approval_steps;
     resource.manager_name = `${req.user!.first_name} ${req.user!.last_name}`;
     resource.unavailability = [];
     res.json(resource);
@@ -245,7 +305,7 @@ router.post("/rm/approvals/:id/decide", ...rmAuth, async (req, res): Promise<voi
   const client = await pool.connect();
   try {
     const approvalResult = await client.query(
-      `SELECT a.*, b.user_id, rc.approval_steps
+      `SELECT a.*, b.user_id, COALESCE(r.approval_steps_override, rc.approval_steps) AS approval_steps
        FROM approval a
        JOIN booking b ON b.booking_id = a.booking_id
        JOIN resource r ON r.resource_id = b.resource_id
