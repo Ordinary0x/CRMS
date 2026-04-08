@@ -32,9 +32,13 @@ npx pnpm install
 
 Firebase is integrated in frontend (`artifacts/crmbs/src/lib/firebase.ts`) and backend token verification (`artifacts/api-server/src/middlewares/verifyToken.ts`).
 
-You can use either defaults baked into code or define environment variables.
+Frontend Firebase variables are required at build/runtime. Copy:
 
-### Frontend env (optional if using defaults)
+```bash
+cp artifacts/crmbs/.env.example artifacts/crmbs/.env
+```
+
+### Frontend env
 
 - `VITE_API_BASE_URL` (for static deploys, set to your backend URL, e.g. `https://crms-api.onrender.com`)
 - `VITE_FIREBASE_API_KEY`
