@@ -1,6 +1,6 @@
 # Campus Resource Management and Booking System (CRMBS)
 
-This project is running locally as a full-stack app with separate frontend, backend, and database folders.
+This project is running locally as a full-stack web app with separate frontend, backend, and database folders.
 
 ## Folder Structure
 
